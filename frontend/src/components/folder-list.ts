@@ -438,18 +438,21 @@ export class FolderList extends LitElement {
   private async handleMoveToTrashConfirm() {
     if (this.mailboxToDelete) {
       const mb = this.mailboxes.find(m => (m.Name || m.Mailbox) === this.mailboxToDelete);
-      let delimiter = '.';
-      if (mb) {
-        const delim = mb.Delimiter || mb.Delim;
-        delimiter = typeof delim === 'number' ? String.fromCharCode(delim) : (delim || '.');
+      if (!mb) {
+        console.log(`handleMoveToTrashConfirm: no mailbox found for ${this.mailboxToDelete}`);
+        this.showMoveToTrashConfirm = false;
+        this.mailboxToDelete = '';
+        return;
       }
 
+      const delim = mb.Delimiter || mb.Delim;
+      const delimiter = typeof delim === 'number' ? String.fromCharCode(delim) : (delim || '.');
       const parts = this.mailboxToDelete.split(delimiter);
       const leafName = parts[parts.length - 1];
 
       // Resolve the actual Trash mailbox by IMAP special-use attribute (e.g.
       // Gmail's "[Gmail]/Trash"), falling back to a folder named "Trash". See issue #4.
-      const trashName = findMailboxNameByRole('trash', this.currentMailbox, this.mailboxes, 'Trash');
+      const trashName = findMailboxNameByRole('trash', this.mailboxToDelete, this.mailboxes, 'Trash');
 
       // Resolve name collisions by appending a suffix if needed
       let candidateName = `${trashName}${delimiter}${leafName}`;
@@ -678,7 +681,6 @@ export class FolderList extends LitElement {
       const standardBySlot = node.account.standardBySlot;
       const existing = standardBySlot.get(idx);
       if (!existing) {
-        console.log("Setting slot", node.account.name, idx, node.fullName);
         standardBySlot.set(idx, node);
         return;
       }

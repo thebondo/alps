@@ -1667,12 +1667,18 @@ function mailboxAccountFromName(name) {
 	else return parts[0];
 }
 function findMailboxNameByRole(role, name, mailboxes, fallback) {
-	if (!name) return fallback;
+	console.log("findMailboxNameByRole", role, name, mailboxes, fallback);
+	if (!name) {
+		console.log("findMailboxNameByRole: no name");
+		return fallback;
+	}
 	const account = mailboxAccountFromName(name);
 	if (account === null) {
+		console.log("findMailboxNameByRole: no account");
 		const mb = (mailboxes || []).filter((m) => mailboxAccountFromName(m.Name || m.Mailbox || "") === null).find((m) => mailboxRole(m) === role);
 		return mb ? mb.Name || mb.Mailbox || fallback : fallback;
 	} else {
+		console.log("findMailboxNameByRole: found account", account);
 		const mb = (mailboxes || []).filter((m) => mailboxAccountFromName(m.Name || m.Mailbox || "") === account).find((m) => mailboxRole(m) === role);
 		fallback = account + "#" + fallback;
 		return mb ? mb.Name || mb.Mailbox || fallback : fallback;
@@ -8267,6 +8273,7 @@ AlpsContactsCategories = __decorate([t("alps-contacts-categories")], AlpsContact
 //#region src/services/mailbox-operations.ts
 var MailboxOperationsService = class extends EventTarget {
 	async createMailbox(name) {
+		console.log("createMailbox", name);
 		try {
 			const formData = new URLSearchParams();
 			formData.append("name", name);
@@ -8284,6 +8291,7 @@ var MailboxOperationsService = class extends EventTarget {
 				messageSync.sync();
 				return true;
 			}
+			Logger.error("Create request failed", res);
 			return false;
 		} catch (err) {
 			Logger.error("Failed to create mailbox", err);
@@ -8291,6 +8299,7 @@ var MailboxOperationsService = class extends EventTarget {
 		}
 	}
 	async renameMailbox(oldName, newName) {
+		console.log("renameMailbox", oldName, newName);
 		try {
 			const res = await fetchWithTimeout(`/mailboxes/${encodeMailboxPath(oldName)}/rename`, {
 				method: "PUT",
@@ -8306,6 +8315,7 @@ var MailboxOperationsService = class extends EventTarget {
 				messageSync.sync();
 				return true;
 			}
+			Logger.error("Rename request failed", res);
 			return false;
 		} catch (err) {
 			Logger.error("Failed to rename mailbox", err);
@@ -8313,6 +8323,7 @@ var MailboxOperationsService = class extends EventTarget {
 		}
 	}
 	async deleteMailbox(name) {
+		console.log("deleteMailbox", name);
 		try {
 			const res = await fetchWithTimeout(`/mailboxes/${encodeMailboxPath(name)}`, { method: "DELETE" });
 			if (res.status === 401) {
@@ -8324,6 +8335,7 @@ var MailboxOperationsService = class extends EventTarget {
 				messageSync.sync();
 				return true;
 			}
+			Logger.error("Delete request failed", res);
 			return false;
 		} catch (err) {
 			Logger.error("Failed to delete mailbox", err);
@@ -8331,6 +8343,7 @@ var MailboxOperationsService = class extends EventTarget {
 		}
 	}
 	async emptyMailbox(name) {
+		console.log("emptyMailbox", name);
 		try {
 			const res = await fetchWithTimeout(`/mailboxes/${encodeMailboxPath(name)}/empty`, { method: "POST" });
 			if (res.status === 401) {
@@ -8342,6 +8355,7 @@ var MailboxOperationsService = class extends EventTarget {
 				messageSync.sync();
 				return true;
 			}
+			Logger.error("Empty request failed", res);
 			return false;
 		} catch (err) {
 			Logger.error("Failed to empty mailbox", err);
@@ -10536,14 +10550,17 @@ var FolderList = class FolderList extends i {
 	async handleMoveToTrashConfirm() {
 		if (this.mailboxToDelete) {
 			const mb = this.mailboxes.find((m) => (m.Name || m.Mailbox) === this.mailboxToDelete);
-			let delimiter = ".";
-			if (mb) {
-				const delim = mb.Delimiter || mb.Delim;
-				delimiter = typeof delim === "number" ? String.fromCharCode(delim) : delim || ".";
+			if (!mb) {
+				console.log(`handleMoveToTrashConfirm: no mailbox found for ${this.mailboxToDelete}`);
+				this.showMoveToTrashConfirm = false;
+				this.mailboxToDelete = "";
+				return;
 			}
+			const delim = mb.Delimiter || mb.Delim;
+			const delimiter = typeof delim === "number" ? String.fromCharCode(delim) : delim || ".";
 			const parts = this.mailboxToDelete.split(delimiter);
 			const leafName = parts[parts.length - 1];
-			const trashName = findMailboxNameByRole("trash", this.currentMailbox, this.mailboxes, "Trash");
+			const trashName = findMailboxNameByRole("trash", this.mailboxToDelete, this.mailboxes, "Trash");
 			let candidateName = `${trashName}${delimiter}${leafName}`;
 			let suffix = 1;
 			while (this.mailboxes.some((m) => (m.Name || m.Mailbox) === candidateName)) {
@@ -10787,7 +10804,6 @@ var FolderList = class FolderList extends i {
 			const standardBySlot = node.account.standardBySlot;
 			const existing = standardBySlot.get(idx);
 			if (!existing) {
-				console.log("Setting slot", node.account.name, idx, node.fullName);
 				standardBySlot.set(idx, node);
 				return;
 			}

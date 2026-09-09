@@ -6,6 +6,7 @@ import { Logger } from '../utils/logger';
 export class MailboxOperationsService extends EventTarget {
   
   async createMailbox(name: string): Promise<boolean> {
+console.log("createMailbox", name);
     try {
       const formData = new URLSearchParams();
       formData.append('name', name);
@@ -27,6 +28,8 @@ export class MailboxOperationsService extends EventTarget {
         messageSync.sync();
         return true;
       }
+
+      Logger.error('Create request failed', res);
       return false;
     } catch (err) {
       Logger.error('Failed to create mailbox', err);
@@ -35,6 +38,7 @@ export class MailboxOperationsService extends EventTarget {
   }
 
   async renameMailbox(oldName: string, newName: string): Promise<boolean> {
+console.log("renameMailbox", oldName, newName);
     try {
       const res = await fetchWithTimeout(`/mailboxes/${encodeMailboxPath(oldName)}/rename`, {
         method: 'PUT',
@@ -52,6 +56,8 @@ export class MailboxOperationsService extends EventTarget {
         messageSync.sync();
         return true;
       }
+
+      Logger.error('Rename request failed', res);
       return false;
     } catch (err) {
       Logger.error('Failed to rename mailbox', err);
@@ -60,6 +66,7 @@ export class MailboxOperationsService extends EventTarget {
   }
 
   async deleteMailbox(name: string): Promise<boolean> {
+console.log("deleteMailbox", name);
     try {
       const res = await fetchWithTimeout(`/mailboxes/${encodeMailboxPath(name)}`, {
         method: 'DELETE'
@@ -75,6 +82,8 @@ export class MailboxOperationsService extends EventTarget {
         messageSync.sync();
         return true;
       }
+
+      Logger.error('Delete request failed', res);
       return false;
     } catch (err) {
       Logger.error('Failed to delete mailbox', err);
@@ -83,6 +92,7 @@ export class MailboxOperationsService extends EventTarget {
   }
 
   async emptyMailbox(name: string): Promise<boolean> {
+console.log("emptyMailbox", name);
     try {
       const res = await fetchWithTimeout(`/mailboxes/${encodeMailboxPath(name)}/empty`, {
         method: 'POST'
@@ -98,6 +108,8 @@ export class MailboxOperationsService extends EventTarget {
         messageSync.sync();
         return true;
       }
+
+      Logger.error('Empty request failed', res);
       return false;
     } catch (err) {
       Logger.error('Failed to empty mailbox', err);

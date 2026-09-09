@@ -125,7 +125,9 @@ export function mailboxAccountFromName(name: string): string | null {
 
 export function findMailboxNameByRole(role: MailboxRole, name: string, mailboxes: any[], fallback: string): string {
 
-  if (!name) return fallback;
+  if (!name) {
+    return fallback;
+  }
   const account = mailboxAccountFromName(name);
   if (account === null) {
     const related = (mailboxes || []).filter(m => mailboxAccountFromName(m.Name || m.Mailbox || "") === null);
@@ -142,22 +144,17 @@ export function findMailboxNameByRole(role: MailboxRole, name: string, mailboxes
 export function folderCanBeDeleted(name: string): boolean {
 
   if (/^(trash|junk|spam|deleted items)$/i.test(name)) {
-console.log("Trash test", name, "TRUE 1", "simple name matches trash names");
     return true;
   }
   let parts = name.split("#");
   if (parts.length == 1) {
-console.log("Trash test", name, "FALSE 1", parts);
     return false;
   }
   if (!parts[0].startsWith("@")) {
-console.log("Trash test", name, "FALSE 2", parts[0]);
     return false;
   }
   if (/^(trash|junk|spam|deleted items)$/i.test(parts[1])) {
-console.log("Trash test", name, "TRUE 2", "base name matches trash names");
     return true;
   }
-console.log("Trash test", name, "FALSE 3", parts);
   return false
 }

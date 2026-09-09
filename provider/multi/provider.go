@@ -89,19 +89,10 @@ func NewProvider(path string) (provider.MailProvider, error) {
 // map an account and mailbox name to a virtual mailbox name
 func (p *MultipleAccountProvider) mapAccountMailboxToVirtual(a *account, name string) string {
 
-	parts := strings.Split(name, a.d)
-
-/*
-	if parts[0] == "INBOX" {
-		if len(parts) == 1 {
-			return "INBOX" + multiDelimiterString + a.c.Name
-		} else {
-			return "INBOX" + multiDelimiterString + a.c.Name + multiDelimiterString + strings.Join(parts[1:], multiDelimiterString)
-		}
-	} else {
-		return a.c.Name + multiDelimiterString + strings.Join(parts, multiDelimiterString)
+	if name == "" {
+		return "@" + a.c.Name
 	}
-*/
+	parts := strings.Split(name, a.d)
 	return "@" + a.c.Name + multiDelimiterString + strings.Join(parts, multiDelimiterString)
 }
 
@@ -111,38 +102,16 @@ func (p *MultipleAccountProvider) mapVirtualMailboxToAccount(name string) (*acco
 	parts := strings.Split(name, multiDelimiterString)
 	n := len(parts)
 
-	if n == 1 {
-		return nil, "", ErrInvalidMailbox
-	}
-
 	accountKey := parts[0]
 	a, ok := p.accountMap[accountKey]
 	if !ok {
 		return nil, "", ErrInvalidAccount
 	}
-	return a, strings.Join(parts[1:], a.d), nil
-
-/*
-	if parts[0] == "INBOX" {
-		accountName := parts[1]
-		a, ok := p.accountMap[accountName]
-		if !ok {
-			return nil, "", ErrInvalidAccount
-		}
-		if n == 2 {
-			return a, "INBOX", nil
-		} else {
-			return a, "INBOX" + a.d + strings.Join(parts[2:], a.d), nil
-		}
+	if n == 1 {
+		return a, "", nil
 	} else {
-		accountName := parts[0]
-		a, ok := p.accountMap[accountName]
-		if !ok {
-			return nil, "", ErrInvalidAccount
-		}
 		return a, strings.Join(parts[1:], a.d), nil
 	}
-*/
 }
 
 func (p *MultipleAccountProvider) saveSettings() {
@@ -200,7 +169,7 @@ func (p *MultipleAccountProvider) GetStore() (provider.Store, error) {
 func (p *MultipleAccountProvider) Close() error {
 	var errs []error
 	for _, key := range p.accountOrder {
-		tmp := p.accountMap[key].p.Close()
+		tmp := p.accountMap[key].Close()
 		if tmp != nil {
 			errs = append(errs, tmp)
 		}
@@ -230,8 +199,21 @@ func (p *MultipleAccountProvider) ListMailboxes() ([]provider.Mailbox, error) {
 
 	for _, key := range p.accountOrder {
 		a := p.accountMap[key]
-		tmp, err := a.p.ListMailboxes()
+
+		abox := provider.Mailbox{
+			Name: key,
+			Delimiter: multiDelimiter,
+			Attributes: nil,
+			Total: -1,
+			Unseen: -1,
+			Subscribed: false,
+		}
+		mailboxes = append(mailboxes, abox)
+
+fmt.Printf("Request mailboxes from %s provider\n", a.c.Name)
+		tmp, err := a.ListMailboxes()
 		if err != nil {
+			fmt.Printf("List failed for %s: %s\n", a.c.Name, err)
 			continue
 		}
 		for _, mbox := range tmp {
@@ -257,9 +239,23 @@ func (p *MultipleAccountProvider) GetMailboxStatus(vMbox string) (*provider.Mail
 			UIDValidity: 0,
 		}, nil
 	}
+
+	/* map the virtual name */
 	a, aMbox, err := p.mapVirtualMailboxToAccount(vMbox)
 	if err != nil { return nil, err }
-	status, err := a.p.GetMailboxStatus(aMbox)
+
+	/* handle the bare account case */
+	if aMbox == "" {
+		return &provider.MailboxStatus{
+			Name:        vMbox,
+			NumMessages: 0,
+			NumUnseen:   0,
+			UIDValidity: 0,
+		}, nil
+	}
+
+	/* pass request to account provider */
+	status, err := a.GetMailboxStatus(aMbox)
 	if err != nil { return nil, err }
 	status.Name = p.mapAccountMailboxToVirtual(a, status.Name)
 	return status, nil
@@ -276,7 +272,12 @@ func (p *MultipleAccountProvider) CreateMailbox(vMbox string) error {
 
 	a, aMbox, err := p.mapVirtualMailboxToAccount(vMbox)
 	if err != nil { return err }
-	return a.p.CreateMailbox(aMbox)
+
+	if aMbox == "" {
+		return fmt.Errorf("cannot create account level entry")
+	}
+
+	return a.CreateMailbox(aMbox)
 }
 
 // DeleteMailbox deletes a mailbox
@@ -284,7 +285,7 @@ func (p *MultipleAccountProvider) DeleteMailbox(vMbox string) error {
 
 	a, aMbox, err := p.mapVirtualMailboxToAccount(vMbox)
 	if err != nil { return err }
-	return a.p.DeleteMailbox(aMbox)
+	return a.DeleteMailbox(aMbox)
 }
 
 // EmptyMailbox empties a mailbox by deleting all its messages
@@ -292,20 +293,28 @@ func (p *MultipleAccountProvider) EmptyMailbox(vMbox string) error {
 
 	a, aMbox, err := p.mapVirtualMailboxToAccount(vMbox)
 	if err != nil { return err }
-	return a.p.EmptyMailbox(aMbox)
+
+	if aMbox == "" {
+		return fmt.Errorf("cannot delete account level entry")
+	}
+
+	return a.EmptyMailbox(aMbox)
 }
 
 // RenameMailbox renames a mailbox
 func (p *MultipleAccountProvider) RenameMailbox(oldVirtualMailbox, newVirtualMailbox string) error {
 
-	a, oldSourceMailbox, err := p.mapVirtualMailboxToAccount(oldVirtualMailbox)
+	a, oldAccountMailbox, err := p.mapVirtualMailboxToAccount(oldVirtualMailbox)
 	if err != nil { return err }
-	aCheck, newSourceMailbox, err := p.mapVirtualMailboxToAccount(newVirtualMailbox)
+	if oldAccountMailbox == "" { return fmt.Errorf("invalid name for source mailbox") }
+
+	aCheck, newAccountMailbox, err := p.mapVirtualMailboxToAccount(newVirtualMailbox)
 	if err != nil { return err }
-	if aCheck != a {
-		return fmt.Errorf("cannot rename across accounts")
-	}
-	return a.p.RenameMailbox(oldSourceMailbox, newSourceMailbox)
+	if newAccountMailbox == "" { return fmt.Errorf("invalid name for target mailbox") }
+
+	// TODO: handle moving between accounts
+	if aCheck != a { return fmt.Errorf("cannot rename across accounts") }
+	return a.RenameMailbox(oldAccountMailbox, newAccountMailbox)
 }
 
 // SubscribeMailbox subscribes to a mailbox
@@ -315,7 +324,8 @@ func (p *MultipleAccountProvider) SubscribeMailbox(vMbox string) error {
 
 	a, aMbox, err := p.mapVirtualMailboxToAccount(vMbox)
 	if err != nil { return err }
-	return a.p.SubscribeMailbox(aMbox)
+	if aMbox == "" { return nil }
+	return a.SubscribeMailbox(aMbox)
 }
 
 // UnsubscribeMailbox unsubscribes from a mailbox
@@ -325,7 +335,8 @@ func (p *MultipleAccountProvider) UnsubscribeMailbox(vMbox string) error {
 
 	a, aMbox, err := p.mapVirtualMailboxToAccount(vMbox)
 	if err != nil { return err }
-	return a.p.UnsubscribeMailbox(aMbox)
+	if aMbox == "" { return nil }
+	return a.UnsubscribeMailbox(aMbox)
 }
 
 // ListMessages returns a paginated list of messages
@@ -337,8 +348,9 @@ func (p *MultipleAccountProvider) ListMessages(vMbox string, sortOrder string, p
 
 	a, aMbox, err := p.mapVirtualMailboxToAccount(vMbox)
 	if err != nil { return nil, 0, err }
+	if aMbox == "" { return nil, 0, nil }
 
-	list, count, err := a.p.ListMessages(aMbox, sortOrder, page, pageSize)
+	list, count, err := a.ListMessages(aMbox, sortOrder, page, pageSize)
 	if err != nil { return nil, 0, err }
 	n := len(list)
 	for i := 0; i < n; i ++ {
@@ -356,7 +368,8 @@ func (p *MultipleAccountProvider) SearchMessages(vMbox, query string, sortOrder 
 
 	a, aMbox, err := p.mapVirtualMailboxToAccount(vMbox)
 	if err != nil { return nil, 0, err }
-	list, count, err := a.p.SearchMessages(aMbox, query, sortOrder, page, pageSize)
+	if aMbox == "" { return nil, 0, nil }
+	list, count, err := a.SearchMessages(aMbox, query, sortOrder, page, pageSize)
 	if err != nil { return nil, 0, err }
 	n := len(list)
 	for i := 0; i < n; i ++ {
@@ -379,7 +392,8 @@ func (p *MultipleAccountProvider) GetMessageMetadata(vMbox string, id provider.M
 
 	a, aMbox, err := p.mapVirtualMailboxToAccount(vMbox)
 	if err != nil { return nil, err }
-	msg, err := a.p.GetMessageMetadata(aMbox, id)
+	if aMbox == "" { return nil, fmt.Errorf("invalid mailbox") }
+	msg, err := a.GetMessageMetadata(aMbox, id)
 	if err != nil { return nil, err }
 	msg.Mailbox = p.mapAccountMailboxToVirtual(a, msg.Mailbox)
 	return msg, nil
@@ -390,7 +404,8 @@ func (p *MultipleAccountProvider) GetMessagePart(vMbox string, id provider.Messa
 
 	a, aMbox, err := p.mapVirtualMailboxToAccount(vMbox)
 	if err != nil { return nil, nil, err }
-	msg, ent, err := a.p.GetMessagePart(aMbox, id, partPath)
+	if aMbox == "" { return nil, nil, fmt.Errorf("invalid mailbox") }
+	msg, ent, err := a.GetMessagePart(aMbox, id, partPath)
 	if err != nil { return nil, nil, err }
 	msg.Mailbox = p.mapAccountMailboxToVirtual(a, msg.Mailbox)
 	return msg, ent, nil
@@ -401,7 +416,8 @@ func (p *MultipleAccountProvider) GetMessagePartRaw(vMbox string, id provider.Me
 
 	a, aMbox, err := p.mapVirtualMailboxToAccount(vMbox)
 	if err != nil { return nil, nil, nil, err }
-	msg, b1, b2, err := a.p.GetMessagePartRaw(aMbox, id, partPath, limit)
+	if aMbox == "" { return nil, nil, nil, fmt.Errorf("invalid mailbox") }
+	msg, b1, b2, err := a.GetMessagePartRaw(aMbox, id, partPath, limit)
 	if err != nil { return nil, nil, nil, err }
 	msg.Mailbox = p.mapAccountMailboxToVirtual(a, msg.Mailbox)
 	return msg, b1, b2, nil
@@ -412,7 +428,8 @@ func (p *MultipleAccountProvider) GetMessagePartWithData(vMbox string, id provid
 
 	a, aMbox, err := p.mapVirtualMailboxToAccount(vMbox)
 	if err != nil { return nil, nil, nil, nil, err }
-	msg, e, b1, b2, err := a.p.GetMessagePartWithData(aMbox, id, partPath)
+	if aMbox == "" { return nil, nil, nil, nil, fmt.Errorf("invalid mailbox") }
+	msg, e, b1, b2, err := a.GetMessagePartWithData(aMbox, id, partPath)
 	if err != nil { return nil, nil, nil, nil, err }
 	msg.Mailbox = p.mapAccountMailboxToVirtual(a, msg.Mailbox)
 	return msg, e, b1, b2, nil
@@ -423,7 +440,8 @@ func (p *MultipleAccountProvider) SetMessagesFlags(vMbox string, ids []provider.
 
 	a, aMbox, err := p.mapVirtualMailboxToAccount(vMbox)
 	if err != nil { return err }
-	return a.p.SetMessagesFlags(aMbox, ids, op)
+	if aMbox == "" { return fmt.Errorf("invalid mailbox") }
+	return a.SetMessagesFlags(aMbox, ids, op)
 }
 
 // MarkAnswered marks a message as answered
@@ -431,7 +449,8 @@ func (p *MultipleAccountProvider) MarkAnswered(vMbox string, id provider.Message
 
 	a, aMbox, err := p.mapVirtualMailboxToAccount(vMbox)
 	if err != nil { return err }
-	return a.p.MarkAnswered(aMbox, id)
+	if aMbox == "" { return fmt.Errorf("invalid mailbox") }
+	return a.MarkAnswered(aMbox, id)
 }
 
 // AppendMessage appends a message to a mailbox and returns the UID
@@ -439,7 +458,8 @@ func (p *MultipleAccountProvider) AppendMessage(vMbox string, msg provider.Outgo
 
 	a, aMbox, err := p.mapVirtualMailboxToAccount(vMbox)
 	if err != nil { return nil, nil, 0, err }
-	mbox, mid, count, err := a.p.AppendMessage(aMbox, msg, mboxType)
+	if aMbox == "" { return nil, nil, 0, fmt.Errorf("invalid mailbox") }
+	mbox, mid, count, err := a.AppendMessage(aMbox, msg, mboxType)
 	if err != nil { return nil, nil, 0, err }
 	mbox.Name = p.mapAccountMailboxToVirtual(a, mbox.Name)
 	mbox.Delimiter = multiDelimiter
@@ -451,39 +471,44 @@ func (p *MultipleAccountProvider) DeleteMessages(vMbox string, ids []provider.Me
 
 	a, aMbox, err := p.mapVirtualMailboxToAccount(vMbox)
 	if err != nil { return err }
-	return a.p.DeleteMessages(aMbox, ids)
+	if aMbox == "" { return fmt.Errorf("invalid mailbox") }
+	return a.DeleteMessages(aMbox, ids)
 }
 
 // MoveMessages moves multiple messages between mailboxes
 func (p *MultipleAccountProvider) MoveMessages(srcVirtualMailbox, dstVirtualMailbox string, ids []provider.MessageID) (map[provider.MessageID]provider.MessageID, error) {
 
-	a, srcSourceMailbox, err := p.mapVirtualMailboxToAccount(srcVirtualMailbox)
+	a, srcAccountMailbox, err := p.mapVirtualMailboxToAccount(srcVirtualMailbox)
 	if err != nil { return nil, err }
+	if srcAccountMailbox == "" { return nil, fmt.Errorf("invalid source mailbox") }
 
-	aCheck, dstSourceMailbox, err := p.mapVirtualMailboxToAccount(dstVirtualMailbox)
+	aCheck, dstAccountMailbox, err := p.mapVirtualMailboxToAccount(dstVirtualMailbox)
 	if err != nil { return nil, err }
+	if dstAccountMailbox == "" { return nil, fmt.Errorf("invalid target mailbox") }
 
 	if aCheck != a {
 		return nil, fmt.Errorf("move between accounts not supported yet")
 	}
 
-	return a.p.MoveMessages(srcSourceMailbox, dstSourceMailbox, ids)
+	return a.MoveMessages(srcAccountMailbox, dstAccountMailbox, ids)
 }
 
 // CopyMessages copies messages to another mailbox
 func (p *MultipleAccountProvider) CopyMessages(srcVirtualMailbox, dstVirtualMailbox string, ids []provider.MessageID) (map[provider.MessageID]provider.MessageID, error) {
 
-	a, srcSourceMailbox, err := p.mapVirtualMailboxToAccount(srcVirtualMailbox)
+	a, srcAccountMailbox, err := p.mapVirtualMailboxToAccount(srcVirtualMailbox)
 	if err != nil { return nil, err }
+	if srcAccountMailbox == "" { return nil, fmt.Errorf("invalid source mailbox") }
 
-	aCheck, dstSourceMailbox, err := p.mapVirtualMailboxToAccount(dstVirtualMailbox)
+	aCheck, dstAccountMailbox, err := p.mapVirtualMailboxToAccount(dstVirtualMailbox)
 	if err != nil { return nil, err }
+	if dstAccountMailbox == "" { return nil, fmt.Errorf("invalid target mailbox") }
 
 	if aCheck != a {
 		return nil, fmt.Errorf("copy between accounts not supported yet")
 	}
 
-	return a.p.CopyMessages(srcSourceMailbox, dstSourceMailbox, ids)
+	return a.CopyMessages(srcAccountMailbox, dstAccountMailbox, ids)
 }
 
 func (p *MultipleAccountProvider) HasThreadCapability() bool {
