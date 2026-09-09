@@ -59,6 +59,14 @@ func (p *IMAPProvider) GetStore() (provider.Store, error) {
 	return p.store, nil
 }
 
+// GetStore returns the per-user store for this provider
+func (p *IMAPProvider) SetStore(s provider.Store) {
+	if p.store != nil {
+		p.store = nil
+	}
+	p.store = s
+}
+
 // Close closes the IMAP connection
 func (p *IMAPProvider) Close() error {
 	if p.client != nil {

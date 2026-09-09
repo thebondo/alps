@@ -43,15 +43,17 @@ func closeProviderAfter(p provider.MailProvider, done <-chan error) {
 
 type account struct {
 	c *accountConfig
+	s provider.Store
 	plock sync.Mutex
 	p provider.MailProvider
 	d string
 }
 
-func newAccount(c *accountConfig) (*account, error) {
+func newAccount(c *accountConfig, s provider.Store) (*account, error) {
 
 	a := &account{
 		c: c,
+		s: s,
 		p: nil,
 		d: ".",
 	}
@@ -79,7 +81,11 @@ func (a *account) connect() error {
 		return err
 	}
 
-	a.p = imap.NewIMAPProvider(client, debug)
+	ip := imap.NewIMAPProvider(client, debug)
+	if a.s != nil {
+		ip.SetStore(a.s)
+	}
+	a.p = ip
 	return nil
 }
 

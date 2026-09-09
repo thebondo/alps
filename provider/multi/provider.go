@@ -22,16 +22,12 @@ var unifiedFolderList = []string{ "INBOX" }
 var ErrInvalidAccount = fmt.Errorf("Invalid account name")
 var ErrInvalidMailbox = fmt.Errorf("Invalid mailbox name")
 
-type MultipleAccountProvider struct {
-	path         string
-	config       *userConfig
-	accountOrder []string
-	accountMap   map[string]*account
-	unifiedOrder []string
-	unifiedMap   map[string]int
+type fileStore struct {
+	path string
+	cache *userConfig
 }
 
-func NewProvider(path string) (provider.MailProvider, error) {
+func newFileStore(path string) (*fileStore, error) {
 
 	content, err := os.ReadFile(path)
 	if err != nil {
@@ -47,10 +43,80 @@ func NewProvider(path string) (provider.MailProvider, error) {
 		cfg.Settings = make(map[string]json.RawMessage)
 	}
 
+	return &fileStore {
+		path: path,
+		cache: &cfg,
+	}, nil
+}
+
+func (s *fileStore) accounts() []*accountConfig {
+
+	return s.cache.Accounts
+}
+
+func (f *fileStore) saveSettings() {
+
+	b, err := json.MarshalIndent(f.cache, "", "   ")
+	if err != nil {
+		log.Printf("provider/multi: save settings marshal failed: %s", err)
+		return
+	}
+	err = os.WriteFile(f.path, b, 0644)
+	if err != nil {
+		log.Printf("provider/multi: save settings write failed: %s", err)
+		return
+	}
+}
+
+func (f *fileStore) Get(key string, out interface{}) error {
+
+	raw, ok := f.cache.Settings[key]
+	if !ok || raw == nil || len(raw) == 0 || string(raw) == "NIL" {
+		return provider.ErrNoStoreEntry
+	}
+	if err := json.Unmarshal(raw, out); err != nil {
+		log.Printf("provider/multi: ignoring invalid store entry %q (err: %v)", key, err)
+		return provider.ErrNoStoreEntry
+	}
+	return nil
+}
+
+func (f *fileStore) Put(key string, v interface{}) error {
+
+	if v != nil {
+		log.Printf("provider/multi: attempt to set setting %s", key)
+		b, err := json.MarshalIndent(v, "   ", "   ")
+		if err != nil {
+			return fmt.Errorf("provider/multi: failed to marshal unified store entry %q: %v", key, err)
+		}
+		f.cache.Settings[key] = json.RawMessage(b)
+	} else {
+		log.Printf("provider/multi: attempt to clear setting %s", key)
+		delete(f.cache.Settings, key)
+	}
+	f.saveSettings()
+	return nil
+}
+
+type MultipleAccountProvider struct {
+	store        *fileStore
+	accountOrder []string
+	accountMap   map[string]*account
+	unifiedOrder []string
+	unifiedMap   map[string]int
+}
+
+func NewProvider(path string) (provider.MailProvider, error) {
+
+	store, err := newFileStore(path)
+	if err != nil {
+		return nil, err
+	}
+
 	alist := []string{}
 	amap := make(map[string]*account)
 
-	for i, c := range cfg.Accounts {
+	for i, c := range store.accounts() {
 		if err := c.check(); err != nil {
 			log.Printf("provider/multi: invalid account config: %w", err)
 			continue
@@ -60,7 +126,7 @@ func NewProvider(path string) (provider.MailProvider, error) {
 			log.Printf("provider/multi: account %d has duplicate name %s", i, c.Name)
 			continue
 		}
-		a, err := newAccount(c)
+		a, err := newAccount(c, store)
 		if err != nil {
 			log.Printf("provider/multi: connect failed for %s: %s", c.Name, err)
 			continue
@@ -77,8 +143,7 @@ func NewProvider(path string) (provider.MailProvider, error) {
 	}
 
 	return &MultipleAccountProvider{
-		path: path,
-		config: &cfg,
+		store: store,
 		accountOrder: alist,
 		accountMap: amap,
 		unifiedOrder: ulist,
@@ -114,55 +179,10 @@ func (p *MultipleAccountProvider) mapVirtualMailboxToAccount(name string) (*acco
 	}
 }
 
-func (p *MultipleAccountProvider) saveSettings() {
-
-	b, err := json.MarshalIndent(p.config, "", "   ")
-	if err != nil {
-		log.Printf("provider/multi: save settings marshal failed: %s", err)
-		return
-	}
-	err = os.WriteFile(p.path, b, 0644)
-	if err != nil {
-		log.Printf("provider/multi: save settings write failed: %s", err)
-		return
-	}
-}
-
-func (p *MultipleAccountProvider) Get(key string, out interface{}) error {
-
-	raw, ok := p.config.Settings[key]
-	if !ok || raw == nil || len(raw) == 0 || string(raw) == "NIL" {
-		return provider.ErrNoStoreEntry
-	}
-	if err := json.Unmarshal(raw, out); err != nil {
-		log.Printf("provider/multi: ignoring invalid store entry %q (err: %v)", key, err)
-		return provider.ErrNoStoreEntry
-	}
-	return nil
-}
-
-func (p *MultipleAccountProvider) Put(key string, v interface{}) error {
-
-	if v != nil {
-		log.Printf("provider/multi: attempt to set setting %s", key)
-		b, err := json.MarshalIndent(v, "   ", "   ")
-		if err != nil {
-			return fmt.Errorf("provider/multi: failed to marshal unified store entry %q: %v", key, err)
-		}
-		p.config.Settings[key] = json.RawMessage(b)
-	} else {
-		log.Printf("provider/multi: attempt to clear setting %s", key)
-		delete(p.config.Settings, key)
-	}
-	p.saveSettings()
-	return nil
-}
-
-
 // GetStore returns the per-user store for this provider
 func (p *MultipleAccountProvider) GetStore() (provider.Store, error) {
 
-	return p, nil
+	return p.store, nil
 }
 
 // Close closes all the child providers
@@ -513,7 +533,7 @@ func (p *MultipleAccountProvider) CopyMessages(srcVirtualMailbox, dstVirtualMail
 
 func (p *MultipleAccountProvider) HasThreadCapability() bool {
 
-	return false
+	return true
 }
 
 func (p *MultipleAccountProvider) HasESearchCapability() bool {
