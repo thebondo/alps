@@ -105,7 +105,59 @@ export function mailboxRoleByName(name: string, mailboxes: any[] = []): MailboxR
  * a well-known name. Returns `fallback` when no matching mailbox is found, so a
  * caller can still attempt a move/copy against the conventional name.
  */
-export function findMailboxNameByRole(role: MailboxRole, mailboxes: any[], fallback: string): string {
+export function findMailboxNameByRoleOld(role: MailboxRole, mailboxes: any[], fallback: string): string {
   const mb = (mailboxes || []).find(m => mailboxRole(m) === role);
   return mb ? (mb.Name || mb.Mailbox || fallback) : fallback;
+}
+
+export function mailboxAccountFromName(name: string): string | null {
+
+  if (!name === null) return null;
+  if (name === "INBOX") return null;
+  const parts = name.split("#")
+  if (parts.length == 1) return null;
+  if (parts[0] == "INBOX") {
+    return parts[1];
+  } else {
+    return parts[0];
+  }
+}
+
+export function findMailboxNameByRole(role: MailboxRole, name: string, mailboxes: any[], fallback: string): string {
+
+  if (!name) return fallback;
+  const account = mailboxAccountFromName(name);
+  if (account === null) {
+    const related = (mailboxes || []).filter(m => mailboxAccountFromName(m.Name || m.Mailbox || "") === null);
+    const mb = related.find(m => mailboxRole(m) === role);
+    return mb ? (mb.Name || mb.Mailbox || fallback) : fallback;
+  } else {
+    const related = (mailboxes || []).filter(m => mailboxAccountFromName(m.Name || m.Mailbox || "") === account);
+    const mb = related.find(m => mailboxRole(m) === role);
+    fallback = account + "#" + fallback;
+    return mb ? (mb.Name || mb.Mailbox || fallback) : fallback;
+  }
+}
+
+export function folderCanBeDeleted(name: string): boolean {
+
+  if (/^(trash|junk|spam|deleted items)$/i.test(name)) {
+console.log("Trash test", name, "TRUE 1", "simple name matches trash names");
+    return true;
+  }
+  let parts = name.split("#");
+  if (parts.length == 1) {
+console.log("Trash test", name, "FALSE 1", parts);
+    return false;
+  }
+  if (!parts[0].startsWith("@")) {
+console.log("Trash test", name, "FALSE 2", parts[0]);
+    return false;
+  }
+  if (/^(trash|junk|spam|deleted items)$/i.test(parts[1])) {
+console.log("Trash test", name, "TRUE 2", "base name matches trash names");
+    return true;
+  }
+console.log("Trash test", name, "FALSE 3", parts);
+  return false
 }

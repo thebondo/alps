@@ -74,6 +74,7 @@ func (p *IMAPProvider) Close() error {
 func (p *IMAPProvider) ListMailboxes() ([]provider.Mailbox, error) {
 	var options imap.ListOptions
 	options.ReturnSubscribed = true
+	options.ReturnSpecialUse = true
 	if p.client.Caps().Has(imap.CapListStatus) {
 		options.ReturnStatus = &imap.StatusOptions{
 			NumMessages: true,
@@ -129,6 +130,9 @@ func (p *IMAPProvider) ListMailboxes() ([]provider.Mailbox, error) {
 		}
 		return mailboxes[i].Name < mailboxes[j].Name
 	})
+	for i, x := range mailboxes {
+		fmt.Printf("IMAP mailbox %d = %s (%s)\n", i, x.Name, strings.Join(x.Attributes, ", "))
+	}
 	return mailboxes, nil
 }
 

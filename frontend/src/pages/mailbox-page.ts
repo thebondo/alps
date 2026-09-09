@@ -1000,9 +1000,9 @@ export class MailboxPage extends LitElement {
         let moveResult: { success: boolean, uidMapping?: Record<string, string> } = { success: false };
         // Resolve move destinations to the actual special-use mailbox (e.g. Gmail's
         // "[Gmail]/Trash") rather than a hardcoded English name. See issue #4.
-        let destinationFolder = findMailboxNameByRole('trash', this.mailboxes, FOLDER_TRASH);
-        if (action === 'archive') destinationFolder = findMailboxNameByRole('archive', this.mailboxes, FOLDER_ARCHIVE);
-        if (action === 'reportSpam') destinationFolder = findMailboxNameByRole('junk', this.mailboxes, FOLDER_JUNK);
+        let destinationFolder = findMailboxNameByRole('trash', this.currentMailbox, this.mailboxes, FOLDER_TRASH);
+        if (action === 'archive') destinationFolder = findMailboxNameByRole('archive', this.currentMailbox, this.mailboxes, FOLDER_ARCHIVE);
+        if (action === 'reportSpam') destinationFolder = findMailboxNameByRole('junk', this.currentMailbox, this.mailboxes, FOLDER_JUNK);
         if (action === 'notSpam') destinationFolder = FOLDER_INBOX;
 
         if (action === 'delete' && (isTrash || isDrafts || isSpam)) {

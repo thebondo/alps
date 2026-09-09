@@ -2,7 +2,7 @@ import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { formatDateList, formatSize, getMailboxLabel, renderIcon, getBimiAvatarUrl } from '../utils/ui';
 import { FLAG_SEEN, FLAG_FLAGGED, FLAG_ANSWERED, FLAG_FORWARDED, getMessageTags } from '../utils/flags';
-import { FOLDER_DRAFTS, FOLDER_SENT } from '../utils/folders';
+import { FOLDER_DRAFTS, FOLDER_SENT, folderCanBeDeleted } from '../utils/folders';
 import { messageSync } from '../services/message-sync';
 import { mailboxOperations } from '../services/mailbox-operations';
 import { consume } from '@lit/context';
@@ -1191,7 +1191,7 @@ export class MessageList extends LitElement {
             </alps-button>
           </alps-banner>
         ` : ''}
-        ${!this.filterQuery && /^(trash|junk|spam|deleted items)$/i.test(this.currentMailbox) && this.totalMessages > 0 ? html`
+        ${!this.filterQuery && folderCanBeDeleted(this.currentMailbox) && this.totalMessages > 0 ? html`
           <alps-banner variant="warning">
             <span>${this.i18nStore?.t('messageList.totalMessagesIn')?.replace('{count}', String(this.totalMessages)).replace('{folder}', this.currentMailbox) || `${this.totalMessages} total messages in ${this.currentMailbox}`}</span>
             <alps-button slot="action" variant="normal" ?disabled=${this.selectedMessages.size > 0} @click=${() => this.showEmptyConfirm = true}>

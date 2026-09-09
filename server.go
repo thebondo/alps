@@ -18,6 +18,7 @@ import (
 	"github.com/migadu/alps/provider"
 	"github.com/migadu/alps/provider/imap"
 	"github.com/migadu/alps/provider/maildir"
+	"github.com/migadu/alps/provider/multi"
 )
 
 const (
@@ -140,6 +141,8 @@ func (s *Server) LoadedPluginNames() []string {
 // createProviderFactory creates a factory function for mail providers
 func (s *Server) createProviderFactory() provider.AuthenticatedProviderFactory {
 	return func(username, password string) (provider.MailProvider, error) {
+
+		s.logger.Printf("Trying to create %s provider for %s", s.Options.Provider.Type, username)
 		switch s.Options.Provider.Type {
 		case "maildir":
 			// Parse auth file config
@@ -172,6 +175,13 @@ func (s *Server) createProviderFactory() provider.AuthenticatedProviderFactory {
 			}
 
 			return maildir.NewProvider(path, username), nil
+
+		case "multi":
+			userPath, err := multi.Authenticate(s.Options.Provider.Multi.Path, username, password)
+			if err != nil {
+				return nil, AuthError{err}
+			}
+			return multi.NewProvider(userPath)
 
 		case "imap", "": // Default is IMAP
 			client, err := imap.Connect(s.imap.host, s.imap.tls, s.imap.insecure, s.Options.IMAPTimeout, s.Options.Debug)
@@ -417,6 +427,7 @@ type ProviderOptions struct {
 	Type    string
 	IMAP    IMAPProviderOptions
 	Maildir MaildirProviderOptions
+	Multi   MultiProviderOptions
 }
 
 type IMAPProviderOptions struct {
@@ -432,6 +443,10 @@ type SMTPOptions struct {
 type MaildirProviderOptions struct {
 	Path           string
 	AuthPasswdFile string
+}
+
+type MultiProviderOptions struct {
+	Path string
 }
 
 type WebAuthnOptions struct {

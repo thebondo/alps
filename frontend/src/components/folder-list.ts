@@ -6,7 +6,7 @@ import { composeContext } from '../store/compose-store';
 import type { ComposeStore } from '../store/compose-store';
 import { i18nContext, I18nStore } from '../store/i18n-store';
 import { mailboxOperations } from '../services/mailbox-operations';
-import { FOLDER_INBOX, FOLDER_DRAFTS, FOLDER_SENT, FOLDER_ARCHIVE, FOLDER_ARCHIVES, FOLDER_SPAM, FOLDER_JUNK, FOLDER_TRASH, mailboxRole, findMailboxNameByRole } from '../utils/folders';
+import { FOLDER_INBOX, FOLDER_DRAFTS, FOLDER_SENT, FOLDER_ARCHIVE, FOLDER_ARCHIVES, FOLDER_SPAM, FOLDER_JUNK, FOLDER_TRASH, mailboxRole, findMailboxNameByRole, folderCanBeDeleted } from '../utils/folders';
 import { settingsContext, SettingsStore } from '../store/settings-store';
 import './alps-icon-btn';
 import './ui-prompt';
@@ -18,6 +18,37 @@ import './alps-icon-btn';
 import './alps-create-button';
 import { sidebarLayoutStyles } from './alps-sidebar';
 import './alps-popup';
+
+type TreeNode = {
+  account: Account;
+  name: string;
+  fullName: string;
+  mb?: any;
+  children: Record<string, TreeNode>;
+  siblings: Record<string, TreeNode>;
+  primary?: { icon: string; colorClass: string; label: string };
+  standardOrder: number;
+};
+
+type Account = {
+  name: string;
+  standardBySlot: Map<number, TreeNode>;
+};
+
+function makeNodeCompareFunc(override: string[]) {
+
+  return function (a: TreeNode, b: TreeNode) {
+    const idxA = override.indexOf(a.fullName);
+    const idxB = override.indexOf(b.fullName);
+    if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+    if (idxA !== -1) return -1;
+    if (idxB !== -1) return 1;
+    if (a.standardOrder >= 0 && b.standardOrder >= 0) return a.standardOrder - b.standardOrder;
+    if (a.standardOrder >= 0) return -1;
+    if (b.standardOrder >= 0) return 1;
+    return a.name.localeCompare(b.name);
+  };
+}
 
 @customElement('alps-folder-list')
 export class FolderList extends LitElement {
@@ -418,7 +449,7 @@ export class FolderList extends LitElement {
 
       // Resolve the actual Trash mailbox by IMAP special-use attribute (e.g.
       // Gmail's "[Gmail]/Trash"), falling back to a folder named "Trash". See issue #4.
-      const trashName = findMailboxNameByRole('trash', this.mailboxes, 'Trash');
+      const trashName = findMailboxNameByRole('trash', this.currentMailbox, this.mailboxes, 'Trash');
 
       // Resolve name collisions by appending a suffix if needed
       let candidateName = `${trashName}${delimiter}${leafName}`;
@@ -456,8 +487,9 @@ export class FolderList extends LitElement {
     this.mailboxToDelete = '';
   }
 
-  private moveFolder(folderName: string, direction: 'top' | 'up' | 'down' | 'bottom') {
-    console.log('[moveFolder] Start:', { folderName, direction });
+  private moveFolder(node: TreeNode, direction: 'top' | 'up' | 'down' | 'bottom') {
+    console.log('[moveFolder] Start:', node.fullName, direction);
+/*
     const mb = this.mailboxes.find(m => (m.Name || m.Mailbox) === folderName);
     const delim = mb?.Delimiter || mb?.Delim;
     const delimiter = typeof delim === 'number' ? String.fromCharCode(delim) : (delim || '.');
@@ -472,22 +504,18 @@ export class FolderList extends LitElement {
         const sParent = sParts.slice(0, -1).join(delimiter);
         return sParent === parentPath && sParts.length === parts.length;
       });
+*/
+    const siblings = Object.values(node.siblings);
 
     console.log('[moveFolder] Sibling custom folders found:', siblings);
 
     const customOrder = [...(this.settingsStore?.getState()?.customMailboxOrder || [])];
-    siblings.sort((a, b) => {
-      const idxA = customOrder.indexOf(a);
-      const idxB = customOrder.indexOf(b);
-      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
-      if (idxA !== -1) return -1;
-      if (idxB !== -1) return 1;
-      return a.localeCompare(b);
-    });
+    siblings.sort(makeNodeCompareFunc(customOrder));
 
     console.log('[moveFolder] Sorted siblings:', siblings);
 
-    const currentIndex = siblings.indexOf(folderName);
+    const names = siblings.map((n: TreeNode) => n.fullName);
+    const currentIndex = names.indexOf(node.fullName);
     if (currentIndex === -1) {
       console.error('[moveFolder] Folder not found in siblings!');
       return;
@@ -502,10 +530,10 @@ export class FolderList extends LitElement {
         newIndex = Math.max(0, currentIndex - 1);
         break;
       case 'down':
-        newIndex = Math.min(siblings.length - 1, currentIndex + 1);
+        newIndex = Math.min(names.length - 1, currentIndex + 1);
         break;
       case 'bottom':
-        newIndex = siblings.length - 1;
+        newIndex = names.length - 1;
         break;
     }
 
@@ -516,13 +544,13 @@ export class FolderList extends LitElement {
       return;
     }
 
-    siblings.splice(currentIndex, 1);
-    siblings.splice(newIndex, 0, folderName);
+    names.splice(currentIndex, 1);
+    names.splice(newIndex, 0, node.fullName);
 
-    console.log('[moveFolder] New siblings order:', siblings);
+    console.log('[moveFolder] New siblings order:', names);
 
-    const updatedOrder = customOrder.filter(name => !siblings.includes(name));
-    updatedOrder.push(...siblings);
+    const updatedOrder = customOrder.filter(name => !names.includes(name));
+    updatedOrder.push(...names);
 
     console.log('[moveFolder] Final updated customMailboxOrder settings state:', updatedOrder);
 
@@ -554,8 +582,25 @@ export class FolderList extends LitElement {
       [FOLDER_TRASH]: { icon: 'trash', colorClass: 'icon-trash', label: this.i18nStore?.t('folderList.trash') }
     };
 
-    type TreeNode = { name: string; fullName: string; mb?: any; children: Record<string, TreeNode>; primary?: { icon: string; colorClass: string; label: string } };
+    const newAccount = (name: string) => {
+      return {
+        name: name,
+        standardBySlot: new Map<number, TreeNode>()
+      };
+    };
+
     const root: Record<string, TreeNode> = {};
+    const unified = newAccount("@unified");
+    const accounts = new Map<string, Account>();
+
+    const getOrAddAccount = (name: string) => {
+      let a = accounts.get(name);
+      if (!a) {
+        a = newAccount(name);
+        accounts.set(name, a);
+      }
+      return a;
+    }
 
     this.mailboxes.forEach(mb => {
       const fullName = mb.Name || mb.Mailbox || '';
@@ -565,16 +610,23 @@ export class FolderList extends LitElement {
 
       let currentLevel = root;
       let pathAcc = '';
+      let account = unified;
 
+      if (parts[0].startsWith("@")) {
+        account = getOrAddAccount(parts[0]);
+      }
       for (let i = 0; i < parts.length; i++) {
         const part = parts[i];
         pathAcc = i === 0 ? part : pathAcc + delimiter + part;
 
         if (!currentLevel[part]) {
           currentLevel[part] = {
+            account: account,
             name: part,
             fullName: pathAcc,
-            children: {}
+            children: {},
+            siblings: currentLevel,
+            standardOrder: -1
           };
         }
         if (i === parts.length - 1) {
@@ -610,17 +662,23 @@ export class FolderList extends LitElement {
       return -1;
     };
 
-    const standardBySlot = new Map<number, TreeNode>();
     const customNodes: TreeNode[] = [];
 
-    Object.values(root).forEach(node => {
-      const idx = slotIndexForNode(node);
-      if (idx < 0) {
+    const assignSlots = (topLevel: boolean) => (node: TreeNode) => {
+      if (node.name == node.account.name) {
         customNodes.push(node);
+        Object.values(node.children).forEach(assignSlots(false));
         return;
       }
+      const idx = slotIndexForNode(node);
+      if (idx < 0) {
+        if (topLevel) customNodes.push(node);
+        return;
+      }
+      const standardBySlot = node.account.standardBySlot;
       const existing = standardBySlot.get(idx);
       if (!existing) {
+        console.log("Setting slot", node.account.name, idx, node.fullName);
         standardBySlot.set(idx, node);
         return;
       }
@@ -639,68 +697,49 @@ export class FolderList extends LitElement {
           (existingRank === -1 || nodeRank < existingRank));
       if (nodeWins) {
         standardBySlot.set(idx, node);
-        customNodes.push(existing);
+        if (topLevel) customNodes.push(existing);
       } else {
-        customNodes.push(node);
+        if (topLevel) customNodes.push(node);
       }
-    });
+    };
+    Object.values(root).forEach(assignSlots(true));
 
     const standardNodes: TreeNode[] = [];
-    for (let i = 0; i < specialSlots.length; i++) {
-      const node = standardBySlot.get(i);
-      if (!node) continue;
-      node.primary = stdMap[node.name] || specialSlots[i].display;
+
+    unified.standardBySlot.forEach((node, index) => {
+      node.primary = stdMap[node.name] || specialSlots[index].display;
+      node.standardOrder = index;
       standardNodes.push(node);
-    }
-    this.primaryFullNames = new Set(standardNodes.map(n => n.fullName));
-
-    const customOrder = this.settingsStore?.getState()?.customMailboxOrder || [];
-
-    customNodes.sort((a, b) => {
-      const idxA = customOrder.indexOf(a.fullName);
-      const idxB = customOrder.indexOf(b.fullName);
-      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
-      if (idxA !== -1) return -1;
-      if (idxB !== -1) return 1;
-      return a.name.localeCompare(b.name);
     });
+    this.primaryFullNames = new Set(standardNodes.map(n => n.fullName));
+    accounts.forEach((account) => {
+      account.standardBySlot.forEach((node, index) => {
+        node.primary = stdMap[node.name] || specialSlots[index].display;
+        node.standardOrder = index;
+      });
+    })
+
+    const renderOrder = this.settingsStore?.getState()?.customMailboxOrder || [];
+    const renderNodeCompare = makeNodeCompareFunc(renderOrder);
+    customNodes.sort(renderNodeCompare)
 
     const renderTree = (nodes: TreeNode[], depth: number = 0): TemplateResult[] => {
       return nodes.map(node => {
         const hasChildren = Object.keys(node.children).length > 0;
         const isExpanded = this.expandedFolders.has(node.fullName);
         const isActive = this.currentMailbox === node.fullName;
-        const hasActions = depth > 0 || !node.primary;
+        const hasActions = depth > 0 && !node.primary;
 
+//        if (hasActions) {
         let isFirst = false;
         let isLast = false;
-        if (hasActions) {
-          const delim = node.mb?.Delimiter || node.mb?.Delim;
-          const delimiter = typeof delim === 'number' ? String.fromCharCode(delim) : (delim || '.');
-          const parts = node.fullName.split(delimiter);
-          const parentPath = parts.slice(0, -1).join(delimiter);
-
-          const siblings = this.mailboxes
-            .map(m => m.Name || m.Mailbox || '')
-            .filter(name => {
-              if (this.primaryFullNames.has(name)) return false;
-              const sParts = name.split(delimiter);
-              const sParent = sParts.slice(0, -1).join(delimiter);
-              return sParent === parentPath && sParts.length === parts.length;
-            });
-
-          const customOrder = this.settingsStore?.getState()?.customMailboxOrder || [];
-          siblings.sort((a, b) => {
-            const idxA = customOrder.indexOf(a);
-            const idxB = customOrder.indexOf(b);
-            if (idxA !== -1 && idxB !== -1) return idxA - idxB;
-            if (idxA !== -1) return -1;
-            if (idxB !== -1) return 1;
-            return a.localeCompare(b);
-          });
-
-          isFirst = siblings.indexOf(node.fullName) === 0;
-          isLast = siblings.indexOf(node.fullName) === siblings.length - 1;
+        if (depth > 0) {
+          const siblings = Object.values(node.siblings).filter(n => !this.primaryFullNames.has(n.fullName));
+          siblings.sort(renderNodeCompare);
+          if (siblings.length > 0) {
+            isFirst = node.fullName === siblings[0].fullName
+            isLast = node.fullName === siblings[siblings.length - 1].fullName
+          }
         }
 
         let icon = renderIcon('folder');
@@ -727,6 +766,133 @@ export class FolderList extends LitElement {
           }
         };
 
+        const isSpecial = node.primary;
+        const isAccount = node.name.startsWith("@");
+
+        const actions = [];
+
+        // Create subfolder action
+        if (!isSpecial) {
+          actions.push(html`
+            <button class="dropdown-item" @click=${(e: Event) => {
+              const popup = (e.target as HTMLElement).closest('alps-popup') as any;
+              if (popup) popup.close();
+              this.parentForNewFolder = node.fullName;
+              this.showCreatePrompt = true;
+            }}>
+              ${renderIcon('folderPlus')} <span class="item-text">${this.i18nStore?.t('folderList.createSubfolder')}</span>
+            </button>
+          `);
+        }
+
+        // Renaming action
+        if (!isSpecial && !isAccount) {
+          actions.push(html`
+            <button class="dropdown-item" @click=${(e: Event) => {
+              const popup = (e.target as HTMLElement).closest('alps-popup') as any;
+              if (popup) popup.close();
+              this.mailboxToRename = node.fullName;
+              this.showRenamePrompt = true;
+            }}>
+              ${renderIcon('pen')} <span class="item-text">${this.i18nStore?.t('folderList.rename')}</span>
+            </button>
+          `)
+        }
+
+        // Subscription action
+        if (!isSpecial && !isAccount) {
+          actions.push(html`
+            <button class="dropdown-item" @click=${(e: Event) => {
+              const popup = (e.target as HTMLElement).closest('alps-popup') as any;
+              if (popup) popup.close();
+              if (node.mb?.Subscribed) mailboxOperations.unsubscribeMailbox(node.fullName);
+              else mailboxOperations.subscribeMailbox(node.fullName);
+            }}>
+              ${renderIcon(node.mb?.Subscribed ? 'eyeSlash' : 'eye')} <span class="item-text">${node.mb?.Subscribed ? 'Unsubscribe' : 'Subscribe'}</span>
+            </button>
+          `);
+        }
+
+        // Reordering actions
+        if (true) {
+          // Natively nested Order submenu via extended alps-popup
+          if (actions.length > 0) actions.push(html`<div class="dropdown-divider"></div>`)
+          actions.push(html`
+            <alps-popup position="right" align="top" triggerOn="hover" @click=${(e: Event) => e.stopPropagation()}>
+              <button slot="trigger" class="dropdown-item submenu-trigger">
+                <div class="trigger-label">
+                  ${renderIcon('sortAscending')} <span class="item-text">Order</span>
+                </div>
+                <div class="caret-icon">${renderIcon('caretRight')}</div>
+              </button>
+              <button class="dropdown-item" ?disabled=${isFirst} @click=${(e: Event) => {
+                const popup = (e.target as HTMLElement).closest('alps-popup') as any;
+                if (popup) popup.close();
+
+                const parentPopup = (e.target as HTMLElement).closest('.folder-actions')?.querySelector('alps-popup') as any;
+                if (parentPopup) parentPopup.close();
+
+                this.moveFolder(node, 'top');
+              }}>
+                ${renderIcon('caretDoubleUp')} <span class="item-text">Move to Top</span>
+              </button>
+              <button class="dropdown-item" ?disabled=${isFirst} @click=${(e: Event) => {
+                const popup = (e.target as HTMLElement).closest('alps-popup') as any;
+                if (popup) popup.close();
+
+                const parentPopup = (e.target as HTMLElement).closest('.folder-actions')?.querySelector('alps-popup') as any;
+                if (parentPopup) parentPopup.close();
+
+                this.moveFolder(node, 'up');
+              }}>
+                ${renderIcon('caretUp')} <span class="item-text">Move Up</span>
+              </button>
+              <button class="dropdown-item" ?disabled=${isLast} @click=${(e: Event) => {
+                const popup = (e.target as HTMLElement).closest('alps-popup') as any;
+                if (popup) popup.close();
+
+                const parentPopup = (e.target as HTMLElement).closest('.folder-actions')?.querySelector('alps-popup') as any;
+                if (parentPopup) parentPopup.close();
+
+                this.moveFolder(node, 'down');
+              }}>
+                ${renderIcon('caretDown')} <span class="item-text">Move Down</span>
+              </button>
+              <button class="dropdown-item" ?disabled=${isLast} @click=${(e: Event) => {
+                const popup = (e.target as HTMLElement).closest('alps-popup') as any;
+                if (popup) popup.close();
+
+                const parentPopup = (e.target as HTMLElement).closest('.folder-actions')?.querySelector('alps-popup') as any;
+                if (parentPopup) parentPopup.close();
+
+                this.moveFolder(node, 'bottom');
+              }}>
+                ${renderIcon('caretDoubleDown')} <span class="item-text">Move to Bottom</span>
+              </button>
+            </alps-popup>
+          `);
+        }
+
+        // Delete action
+        if (!isAccount && !isSpecial) {
+          if (actions.length > 0) actions.push(html`<div class="dropdown-divider"></div>`);
+          actions.push(html`
+            <button class="dropdown-item" @click=${(e: Event) => {
+              const popup = (e.target as HTMLElement).closest('alps-popup') as any;
+              if (popup) popup.close();
+              this.mailboxToDelete = node.fullName;
+              // The Trash folder itself (by special-use attribute or name) is deleted
+              // outright; other folders offer move-to-trash. See issue #4.
+              if (mailboxRole(node.mb) === 'trash' || folderCanBeDeleted(node.fullName)) {
+                this.showDeleteConfirm = true;
+              } else {
+                this.showMoveToTrashConfirm = true;
+              }
+            }}>
+              ${renderIcon('trash')} <span class="item-text">${this.i18nStore?.t('folderList.delete')}</span>
+            </button>
+          `);
+        }
 
         return html`
           <div 
@@ -747,7 +913,7 @@ export class FolderList extends LitElement {
             <div class="folder-icon ${colorClass}">${icon}</div>
             <div class="folder-name">${label}</div>
             
-            ${hasActions ? html`
+            ${actions.length > 0 ? html`
               <div class="folder-actions ${this.activeKebabMenu === node.fullName ? 'popup-open' : ''}" @click=${(e: Event) => e.stopPropagation()}>
                 <alps-popup 
                   align="right" 
@@ -756,120 +922,17 @@ export class FolderList extends LitElement {
                   @popup-close=${() => { if (this.activeKebabMenu === node.fullName) this.activeKebabMenu = null; }}
                 >
                   <alps-icon-btn slot="trigger" class="kebab-btn" icon="dotsThreeCircleVertical" style="--btn-padding: 8px;"></alps-icon-btn>
-                  <button class="dropdown-item" @click=${(e: Event) => {
-              const popup = (e.target as HTMLElement).closest('alps-popup') as any;
-              if (popup) popup.close();
-              this.parentForNewFolder = node.fullName;
-              this.showCreatePrompt = true;
-            }}>
-                    ${renderIcon('folderPlus')} <span class="item-text">${this.i18nStore?.t('folderList.createSubfolder')}</span>
-                  </button>
-                  <button class="dropdown-item" @click=${(e: Event) => {
-              const popup = (e.target as HTMLElement).closest('alps-popup') as any;
-              if (popup) popup.close();
-              this.mailboxToRename = node.fullName;
-              this.showRenamePrompt = true;
-            }}>
-                    ${renderIcon('pen')} <span class="item-text">${this.i18nStore?.t('folderList.rename')}</span>
-                  </button>
-                  <button class="dropdown-item" @click=${(e: Event) => {
-              const popup = (e.target as HTMLElement).closest('alps-popup') as any;
-              if (popup) popup.close();
-              if (node.mb?.Subscribed) mailboxOperations.unsubscribeMailbox(node.fullName);
-              else mailboxOperations.subscribeMailbox(node.fullName);
-            }}>
-                    ${renderIcon(node.mb?.Subscribed ? 'eyeSlash' : 'eye')} <span class="item-text">${node.mb?.Subscribed ? 'Unsubscribe' : 'Subscribe'}</span>
-                  </button>
-                  <div class="dropdown-divider"></div>
-                  
-                  <!-- Natively nested Order submenu via extended alps-popup -->
-                  <alps-popup position="right" align="top" triggerOn="hover" @click=${(e: Event) => e.stopPropagation()}>
-                    <button slot="trigger" class="dropdown-item submenu-trigger">
-                      <div class="trigger-label">
-                        ${renderIcon('sortAscending')} <span class="item-text">Order</span>
-                      </div>
-                      <div class="caret-icon">${renderIcon('caretRight')}</div>
-                    </button>
-                    
-                    <button class="dropdown-item" ?disabled=${isFirst} @click=${(e: Event) => {
-              const popup = (e.target as HTMLElement).closest('alps-popup') as any;
-              if (popup) popup.close();
-
-              const parentPopup = (e.target as HTMLElement).closest('.folder-actions')?.querySelector('alps-popup') as any;
-              if (parentPopup) parentPopup.close();
-
-              this.moveFolder(node.fullName, 'top');
-            }}>
-                      ${renderIcon('caretDoubleUp')} <span class="item-text">Move to Top</span>
-                    </button>
-                    <button class="dropdown-item" ?disabled=${isFirst} @click=${(e: Event) => {
-              const popup = (e.target as HTMLElement).closest('alps-popup') as any;
-              if (popup) popup.close();
-
-              const parentPopup = (e.target as HTMLElement).closest('.folder-actions')?.querySelector('alps-popup') as any;
-              if (parentPopup) parentPopup.close();
-
-              this.moveFolder(node.fullName, 'up');
-            }}>
-                      ${renderIcon('caretUp')} <span class="item-text">Move Up</span>
-                    </button>
-                    <button class="dropdown-item" ?disabled=${isLast} @click=${(e: Event) => {
-              const popup = (e.target as HTMLElement).closest('alps-popup') as any;
-              if (popup) popup.close();
-
-              const parentPopup = (e.target as HTMLElement).closest('.folder-actions')?.querySelector('alps-popup') as any;
-              if (parentPopup) parentPopup.close();
-
-              this.moveFolder(node.fullName, 'down');
-            }}>
-                      ${renderIcon('caretDown')} <span class="item-text">Move Down</span>
-                    </button>
-                    <button class="dropdown-item" ?disabled=${isLast} @click=${(e: Event) => {
-              const popup = (e.target as HTMLElement).closest('alps-popup') as any;
-              if (popup) popup.close();
-
-              const parentPopup = (e.target as HTMLElement).closest('.folder-actions')?.querySelector('alps-popup') as any;
-              if (parentPopup) parentPopup.close();
-
-              this.moveFolder(node.fullName, 'bottom');
-            }}>
-                      ${renderIcon('caretDoubleDown')} <span class="item-text">Move to Bottom</span>
-                    </button>
-                  </alps-popup>
-
-
-                  <div class="dropdown-divider"></div>
-                  <button class="dropdown-item" @click=${(e: Event) => {
-              const popup = (e.target as HTMLElement).closest('alps-popup') as any;
-              if (popup) popup.close();
-              this.mailboxToDelete = node.fullName;
-              // The Trash folder itself (by special-use attribute or name) is deleted
-              // outright; other folders offer move-to-trash. See issue #4.
-              if (mailboxRole(node.mb) === 'trash' || node.fullName.toLowerCase().startsWith('trash')) {
-                this.showDeleteConfirm = true;
-              } else {
-                this.showMoveToTrashConfirm = true;
-              }
-            }}>
-                    ${renderIcon('trash')} <span class="item-text">${this.i18nStore?.t('folderList.delete')}</span>
-                  </button>
+                  ${ actions }
                 </alps-popup>
               </div>
             ` : ''}
 
             ${unseenCount > 0 ? html`<div class="folder-badge">${unseenCount}</div>` : ''}
           </div>
-          
+
           ${hasChildren && isExpanded ? html`
             <div class="folder-children">
-              ${renderTree(Object.values(node.children).sort((a, b) => {
-              const idxA = customOrder.indexOf(a.fullName);
-              const idxB = customOrder.indexOf(b.fullName);
-              if (idxA !== -1 && idxB !== -1) return idxA - idxB;
-              if (idxA !== -1) return -1;
-              if (idxB !== -1) return 1;
-              return a.name.localeCompare(b.name);
-            }), depth + 1)}
+              ${renderTree(Object.values(node.children).sort(renderNodeCompare), depth + 1)}
             </div>
           ` : ''}
         `;

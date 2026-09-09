@@ -120,7 +120,12 @@ type ProviderConfig struct {
 	Type    string                 `toml:"type"` // "imap" (default)
 	IMAP    IMAPProviderConfig     `toml:"imap"`
 	Maildir MaildirProviderConfig  `toml:"maildir"`
+	Multi   MultiProviderConfig    `toml:"multi"`
 	Options map[string]interface{} `toml:"options"` // Provider-specific options
+}
+
+type MultiProviderConfig struct {
+	Path         string  `toml:"path"`
 }
 
 type MaildirProviderConfig struct {
@@ -396,6 +401,10 @@ func (c *Config) ToOptions() (alps.Options, error) {
 		Insecure: c.Provider.IMAP.Insecure,
 	}
 
+	options.Provider.Multi = alps.MultiProviderOptions{
+		Path:   c.Provider.Multi.Path,
+	}
+
 	// Validation
 	if options.SMTP.Server == "" {
 		return options, fmt.Errorf("no SMTP server specified in config file ([smtp] server)")
@@ -409,6 +418,10 @@ func (c *Config) ToOptions() (alps.Options, error) {
 	case "maildir":
 		if options.Provider.Maildir.Path == "" {
 			return options, fmt.Errorf("no Maildir path specified in config file for maildir provider ([provider.maildir] path)")
+		}
+	case "multi":
+		if options.Provider.Multi.Path == "" {
+			return options, fmt.Errorf("no account data path specified in config file for multiple account provider ([provider.multi] path)")
 		}
 	}
 
