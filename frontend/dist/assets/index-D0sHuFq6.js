@@ -5155,7 +5155,7 @@ import{n as e,r as t}from"./rolldown-runtime-S-ySWqyJ.js";import{_ as n,a as r,c
     .selector-container {
       display: flex;
       flex-direction: column;
-      width: 240px;
+      width: 400px;
     }
 
     .search-box {

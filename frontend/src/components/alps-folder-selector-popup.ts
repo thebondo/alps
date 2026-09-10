@@ -34,7 +34,7 @@ export class AlpsFolderSelectorPopup extends LitElement {
     .selector-container {
       display: flex;
       flex-direction: column;
-      width: 240px;
+      width: 400px;
     }
 
     .search-box {
