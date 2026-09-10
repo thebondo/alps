@@ -4,6 +4,7 @@ import (
 	"os"
 	"log"
 	"fmt"
+	"bytes"
 	"strings"
 	"strconv"
 	"errors"
@@ -438,37 +439,73 @@ func (p *MultipleAccountProvider) DeleteMessages(vMbox string, ids []provider.Me
 // MoveMessages moves multiple messages between mailboxes
 func (p *MultipleAccountProvider) MoveMessages(srcVirtualMailbox, dstVirtualMailbox string, ids []provider.MessageID) (map[provider.MessageID]provider.MessageID, error) {
 
-	a, srcAccountMailbox, err := p.mapVirtualMailboxToAccount(srcVirtualMailbox)
+	src, srcAccountMailbox, err := p.mapVirtualMailboxToAccount(srcVirtualMailbox)
 	if err != nil { return nil, err }
 	if srcAccountMailbox == "" { return nil, fmt.Errorf("invalid source mailbox") }
 
-	aCheck, dstAccountMailbox, err := p.mapVirtualMailboxToAccount(dstVirtualMailbox)
+	dst, dstAccountMailbox, err := p.mapVirtualMailboxToAccount(dstVirtualMailbox)
 	if err != nil { return nil, err }
 	if dstAccountMailbox == "" { return nil, fmt.Errorf("invalid target mailbox") }
 
-	if aCheck != a {
-		return nil, fmt.Errorf("move between accounts not supported yet")
+	if dst == src {
+		return src.MoveMessages(srcAccountMailbox, dstAccountMailbox, ids)
 	}
 
-	return a.MoveMessages(srcAccountMailbox, dstAccountMailbox, ids)
+	result := make(map[provider.MessageID]provider.MessageID)
+	for _, srcID := range ids {
+		_, b1, b2, err := src.GetMessagePartRaw(srcAccountMailbox, srcID, nil, 0)
+		if err != nil {
+			return nil, err
+		}
+		b := make([]byte, 0, len(b1) + len(b2))
+		b = append(b, b1...)
+		b = append(b, b2...)
+		buf := bytes.NewBuffer(b)
+		_, dstID, _, err := dst.AppendMessage(dstAccountMailbox, buf, provider.MailboxTypeUser)
+		if err != nil {
+			return nil, err
+		}
+		result[srcID] = dstID
+	}
+	err = src.DeleteMessages(srcAccountMailbox, ids)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 // CopyMessages copies messages to another mailbox
 func (p *MultipleAccountProvider) CopyMessages(srcVirtualMailbox, dstVirtualMailbox string, ids []provider.MessageID) (map[provider.MessageID]provider.MessageID, error) {
 
-	a, srcAccountMailbox, err := p.mapVirtualMailboxToAccount(srcVirtualMailbox)
+	src, srcAccountMailbox, err := p.mapVirtualMailboxToAccount(srcVirtualMailbox)
 	if err != nil { return nil, err }
 	if srcAccountMailbox == "" { return nil, fmt.Errorf("invalid source mailbox") }
 
-	aCheck, dstAccountMailbox, err := p.mapVirtualMailboxToAccount(dstVirtualMailbox)
+	dst, dstAccountMailbox, err := p.mapVirtualMailboxToAccount(dstVirtualMailbox)
 	if err != nil { return nil, err }
 	if dstAccountMailbox == "" { return nil, fmt.Errorf("invalid target mailbox") }
 
-	if aCheck != a {
-		return nil, fmt.Errorf("copy between accounts not supported yet")
+	if dst == src {
+		return src.CopyMessages(srcAccountMailbox, dstAccountMailbox, ids)
 	}
 
-	return a.CopyMessages(srcAccountMailbox, dstAccountMailbox, ids)
+	result := make(map[provider.MessageID]provider.MessageID)
+	for _, srcID := range ids {
+		_, b1, b2, err := src.GetMessagePartRaw(srcAccountMailbox, srcID, nil, 0)
+		if err != nil {
+			return nil, err
+		}
+		b := make([]byte, 0, len(b1) + len(b2))
+		b = append(b, b1...)
+		b = append(b, b2...)
+		buf := bytes.NewBuffer(b)
+		_, dstID, _, err := dst.AppendMessage(dstAccountMailbox, buf, provider.MailboxTypeUser)
+		if err != nil {
+			return nil, err
+		}
+		result[srcID] = dstID
+	}
+	return result, nil
 }
 
 func (p *MultipleAccountProvider) HasThreadCapability() bool {

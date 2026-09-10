@@ -166,6 +166,35 @@ func (p *IMAPProvider) GetMailboxStatus(name string) (*provider.MailboxStatus, e
 }
 
 // FindMailboxByType finds a mailbox by its type (Sent, Drafts, etc.)
+func (p *IMAPProvider) findMailboxByName(name string) (*provider.Mailbox, error) {
+
+	if name == "" {
+		return nil, fmt.Errorf("illegal mailbox name")
+	}
+	list := p.client.List("", name, nil)
+	mbox := list.Next()
+	err := list.Close()
+	if err != nil {
+		return nil, err
+	}
+	if mbox == nil {
+		return nil, nil
+	}
+	result := &provider.Mailbox{
+		Name:       mbox.Mailbox,
+		Delimiter:  mbox.Delim,
+		Attributes: make([]string, len(mbox.Attrs)),
+		Total:      -1,
+		Unseen:     -1,
+	}
+	for i, attr := range mbox.Attrs {
+		result.Attributes[i] = string(attr)
+	}
+	return result, nil
+}
+
+
+// FindMailboxByType finds a mailbox by its type (Sent, Drafts, etc.)
 func (p *IMAPProvider) FindMailboxByType(mboxType provider.MailboxType) (*provider.Mailbox, error) {
 	var attr imap.MailboxAttr
 	var fallbackNames []string
@@ -1140,7 +1169,14 @@ func (p *IMAPProvider) MarkAnswered(mailbox string, id provider.MessageID) error
 
 // AppendMessage appends a message to a mailbox and returns the UID
 func (p *IMAPProvider) AppendMessage(mailbox string, msg provider.OutgoingMessageWriter, mboxType provider.MailboxType) (*provider.Mailbox, provider.MessageID, uint32, error) {
-	mbox, err := p.FindMailboxByType(mboxType)
+
+	var mbox *provider.Mailbox
+	var err error
+	if mboxType == provider.MailboxTypeUser {
+		mbox, err = p.findMailboxByName(mailbox)
+	} else {
+		mbox, err = p.FindMailboxByType(mboxType)
+	}
 	if err != nil {
 		return nil, nil, 0, err
 	}

@@ -1532,7 +1532,7 @@ func handleComposeNew(ctx *alps.Context) error {
 
 		err := ctx.Session.DoMailWithContext(ctx.Request.Context(), func(p provider.MailProvider) error {
 			var err error
-			drafts, uid, size, err = appendMessageWithProvider(p, msg, provider.MailboxTypeDrafts)
+			drafts, uid, size, err = appendMessageWithProvider(p, msg, provider.MailboxTypeDrafts, "")
 			if err != nil {
 				return err
 			}
@@ -1607,7 +1607,7 @@ func handleComposeNew(ctx *alps.Context) error {
 	}
 
 	err = ctx.Session.DoMailWithContext(ctx.Request.Context(), func(p provider.MailProvider) error {
-		if _, _, _, err := appendMessageWithProvider(p, msg, provider.MailboxTypeSent); err != nil {
+		if _, _, _, err := appendMessageWithProvider(p, msg, provider.MailboxTypeSent, ""); err != nil {
 			return err
 		}
 		if draftPath != nil {

@@ -202,8 +202,8 @@ func markMessageAnsweredWithProvider(p provider.MailProvider, mailbox string, ui
 }
 
 // appendMessageWithProvider appends a message using the provider
-func appendMessageWithProvider(p provider.MailProvider, msg *OutgoingMessage, mboxType provider.MailboxType) (*MailboxInfo, provider.MessageID, uint32, error) {
-	mbox, uid, size, err := p.AppendMessage("", msg, mboxType)
+func appendMessageWithProvider(p provider.MailProvider, msg *OutgoingMessage, mboxType provider.MailboxType, name string) (*MailboxInfo, provider.MessageID, uint32, error) {
+	mbox, uid, size, err := p.AppendMessage(name, msg, mboxType)
 	if err != nil {
 		return nil, nil, 0, err
 	}
