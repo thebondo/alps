@@ -83,7 +83,7 @@ func registerRoutes(p *alps.GoPlugin) {
 
 type BaseMailboxData struct {
 	Mailboxes []MailboxInfo
-	Inbox     *MailboxStatus
+	Inboxes   []*MailboxStatus
 	Mailbox   *MailboxStatus
 }
 
@@ -251,6 +251,31 @@ func updateCachedMessageFlags(ctx *alps.Context, mailbox string, uid provider.Me
 	}
 }
 
+func isAccount(part string) bool {
+
+	if len(part) < 2 {
+		return false
+	}
+	if part[0:1] != "@" {
+		return false
+	}
+	return true
+}
+
+func isInbox(mb MailboxInfo, delim string) bool {
+
+	name := strings.ToLower(mb.Name())
+	if name == "inbox" {
+		return true
+	}
+
+	parts := strings.Split(name, delim)
+	if len(parts) != 2 || !isAccount(parts[0]) {
+		return false
+	}
+	return parts[1] == "inbox"
+}
+
 func getBaseMailboxData(ctx *alps.Context) (*BaseMailboxData, error) {
 
 	mboxName, err := url.PathUnescape(ctx.Param("mbox"))
@@ -258,10 +283,10 @@ func getBaseMailboxData(ctx *alps.Context) (*BaseMailboxData, error) {
 		return nil, alps.NewHTTPError(http.StatusBadRequest, err)
 	}
 
-	if mboxName == "*" {
+	if mboxName == "*" || mboxName == "-" {
 		active := &MailboxStatus{
 			StatusData: &imap.StatusData{
-				Mailbox: "*",
+				Mailbox: mboxName,
 			},
 		}
 
@@ -286,15 +311,18 @@ func getBaseMailboxData(ctx *alps.Context) (*BaseMailboxData, error) {
 
 		return &BaseMailboxData{
 			Mailboxes: mailboxes,
-			Inbox:     nil,
+			Inboxes:   nil,
 			Mailbox:   active,
 		}, nil
 	}
 
 	statuses := make(map[string]*MailboxStatus)
+	statusesToFetch := make(map[string]bool)
 	var mailboxes []MailboxInfo
-	var active, inbox *MailboxStatus
+	inboxList := []string{}
+	activeIsInbox := false
 	needsIMAP := false
+	allStatusesCached := true
 
 	// Try to get mailboxes from cache first
 	cacheKey := "mailboxes"
@@ -306,11 +334,19 @@ func getBaseMailboxData(ctx *alps.Context) (*BaseMailboxData, error) {
 	}
 
 	// Try to get all needed statuses from cache
-	allStatusesCached := true
 	if len(mailboxes) > 0 {
 		// Try to get statuses from cache
-		statusesToCheck := []string{"INBOX"}
-		if mboxName != "" && mboxName != "INBOX" {
+		for _, mb := range mailboxes {
+			if isInbox(mb, "#") {
+				inboxList = append(inboxList, mb.Name())
+				if mb.Name() == mboxName {
+					activeIsInbox = true
+				}
+			}
+		}
+
+		statusesToCheck := append([]string{}, inboxList...)
+		if mboxName != "" && !activeIsInbox {
 			statusesToCheck = append(statusesToCheck, mboxName)
 		}
 
@@ -321,41 +357,19 @@ func getBaseMailboxData(ctx *alps.Context) (*BaseMailboxData, error) {
 				ctx.Server.Logger().Debugf("Cache HIT for status:%s", name)
 			} else {
 				allStatusesCached = false
-				break
+				statusesToFetch[name] = true
 			}
-		}
-
-		if allStatusesCached {
-			inbox = statuses["INBOX"]
-			if mboxName != "" {
-				active = statuses[mboxName]
-			}
-			ctx.Server.Logger().Debugf("All data served from cache, skipping IMAP call")
-		} else {
-			needsIMAP = true
 		}
 	}
 
 	if !needsIMAP && allStatusesCached {
 		// Everything is cached, skip provider call entirely
+		ctx.Server.Logger().Debugf("All data served from cache, skipping IMAP call")
 		err = nil
 	} else {
 		err = ctx.Session.DoMailWithContext(ctx.Request.Context(), func(p provider.MailProvider) error {
 			var err error
 			var needsMailboxListFetch = len(mailboxes) == 0
-
-			// Collect which statuses we need to fetch
-			statusesToFetch := make(map[string]bool)
-			if mboxName != "" {
-				if _, ok := ctx.Session.Cache().Get("status:" + mboxName); !ok {
-					statusesToFetch[mboxName] = true
-				}
-			}
-			if mboxName != "INBOX" {
-				if _, ok := ctx.Session.Cache().Get("status:INBOX"); !ok {
-					statusesToFetch["INBOX"] = true
-				}
-			}
 
 			// If we need mailbox list or any statuses, fetch with LIST-STATUS
 			if needsMailboxListFetch || len(statusesToFetch) > 0 {
@@ -369,6 +383,16 @@ func getBaseMailboxData(ctx *alps.Context) (*BaseMailboxData, error) {
 					// Cache the mailbox list
 					ctx.Session.Cache().Set(cacheKey, mailboxes)
 					ctx.Server.Logger().Debugf("Cache MISS for mailboxes list, cached for future requests")
+					inboxList = inboxList[:0]
+					for _, mb := range mailboxes {
+						if isInbox(mb, "#") {
+							inboxList = append(inboxList, mb.Name())
+							if mb.Name() == mboxName {
+								activeIsInbox = true
+							}
+							statusesToFetch[mb.Name()] = true
+						}
+					}
 				}
 
 				// Cache ALL statuses from the list (not just the ones we need)
@@ -410,29 +434,6 @@ func getBaseMailboxData(ctx *alps.Context) (*BaseMailboxData, error) {
 				}
 			}
 
-			// Get statuses from cache for ones we already have
-			if mboxName != "" {
-				statusKey := "status:" + mboxName
-				if cached, ok := ctx.Session.Cache().Get(statusKey); ok {
-					active = cached.(*MailboxStatus)
-					ctx.Server.Logger().Debugf("Cache HIT for status:%s", mboxName)
-				} else {
-					active = statuses[mboxName]
-				}
-			}
-
-			if mboxName == "INBOX" {
-				inbox = active
-			} else {
-				statusKey := "status:INBOX"
-				if cached, ok := ctx.Session.Cache().Get(statusKey); ok {
-					inbox = cached.(*MailboxStatus)
-					ctx.Server.Logger().Debugf("Cache HIT for status:INBOX")
-				} else {
-					inbox = statuses["INBOX"]
-				}
-			}
-
 			return nil
 		})
 	}
@@ -440,10 +441,15 @@ func getBaseMailboxData(ctx *alps.Context) (*BaseMailboxData, error) {
 		return nil, err
 	}
 
-	if mboxName != "" {
-		statuses[mboxName] = active
+	inboxes := make([]*MailboxStatus, 0, len(inboxList))
+	var active *MailboxStatus
+
+	for _, name := range inboxList {
+		inboxes = append(inboxes, statuses[name])
 	}
-	statuses["INBOX"] = inbox
+	if mboxName != "" {
+		active = statuses[mboxName]
+	}
 
 	for i := range mailboxes {
 		// Populate unseen & active states
@@ -461,7 +467,7 @@ func getBaseMailboxData(ctx *alps.Context) (*BaseMailboxData, error) {
 
 	return &BaseMailboxData{
 		Mailboxes: mailboxes,
-		Inbox:     inbox,
+		Inboxes:   inboxes,
 		Mailbox:   active,
 	}, nil
 }
@@ -479,9 +485,19 @@ type MailboxStatusResponse struct {
 // also invalidates the message-page caches so the next full page fetch
 // returns up-to-date data.
 func handleMailboxStatus(ctx *alps.Context) error {
+
+ctx.Server.Logger().Debugf("handleMailboxStatus called")
+
 	mboxName, err := url.PathUnescape(ctx.Param("mbox"))
 	if err != nil {
 		return alps.NewHTTPError(http.StatusBadRequest, err)
+	}
+
+	if mboxName == "-" {
+		return ctx.JSON(http.StatusOK, MailboxStatusResponse{
+			Total:  0,
+			Unseen: 0,
+		})
 	}
 
 	cache := ctx.Session.Cache()
@@ -538,6 +554,8 @@ func handleMailboxStatus(ctx *alps.Context) error {
 }
 
 func handleGetMailbox(ctx *alps.Context) error {
+
+ctx.Server.Logger().Debugf("handleGetMailbox called")
 	if refresh := ctx.QueryParam("refresh"); refresh == "1" || refresh == "true" {
 		cache := ctx.Session.Cache()
 		cache.Delete("mailboxes")
@@ -594,6 +612,20 @@ func handleGetMailbox(ctx *alps.Context) error {
 		msgs  []IMAPMessage
 		total int
 	)
+
+	if mbox.Name() == "-" {
+		return ctx.JSON(http.StatusOK, map[string]interface{}{
+			"Title":           title,
+			"Username":        ctx.Session.Username(),
+			"Mailboxes":       ibase.Mailboxes,
+			"Mailbox":         ibase.Mailbox,
+			"Inboxes":         ibase.Inboxes,
+			"Messages":        msgs,
+			"Total":           total,
+			"Page":            page,
+			"MessagesPerPage": messagesPerPage,
+		})
+	}
 
 	// Build cache key for messages
 	enableThreading := false
@@ -677,7 +709,7 @@ func handleGetMailbox(ctx *alps.Context) error {
 		"Username":        ctx.Session.Username(),
 		"Mailboxes":       ibase.Mailboxes,
 		"Mailbox":         ibase.Mailbox,
-		"Inbox":           ibase.Inbox,
+		"Inboxes":         ibase.Inboxes,
 		"Messages":        msgs,
 		"Total":           total,
 		"Page":            page,
@@ -1344,7 +1376,7 @@ func handleGetPart(ctx *alps.Context, raw bool) error {
 	return ctx.JSON(http.StatusOK, map[string]interface{}{
 		"Mailboxes": ibase.Mailboxes,
 		"Mailbox":   ibase.Mailbox,
-		"Inbox":     ibase.Inbox,
+		"Inboxes":   ibase.Inboxes,
 		"Message":   msg,
 		"Part":      partNode,
 

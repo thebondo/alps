@@ -75,7 +75,9 @@ func authenticate(passwordFile, username, password string) (string, error) {
 }
 
 type options struct {
-	Path string  `toml:"path"`
+	Path string       `toml:"path"`
+	Debug bool        `toml:"debug"`
+	DebugBackend bool `toml:"debug_backend"`
 }
 
 func (o *options) Type() string {
@@ -91,7 +93,12 @@ func (o *options) CreateFactory(timeout time.Duration) provider.AuthenticatedPro
 		if err != nil {
 			return nil, err
 		}
-		return newProvider(userPath)
+		cfg := &MultipleAccountConfig{
+			path: userPath,
+			debug: o.Debug,
+			debugBackend: o.DebugBackend,
+		}
+		return newProvider(cfg)
 	}
 }
 

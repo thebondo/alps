@@ -42,20 +42,22 @@ func closeProviderAfter(p provider.MailProvider, done <-chan error) {
 }
 
 type account struct {
-	c *accountConfig
-	s provider.Store
+	config *accountConfig
+	store provider.Store
 	plock sync.Mutex
-	p provider.MailProvider
-	d string
+	backend provider.MailProvider
+	delim string
+	debug bool
 }
 
-func newAccount(c *accountConfig, s provider.Store) (*account, error) {
+func newAccount(cfg *accountConfig, s provider.Store, debug bool) (*account, error) {
 
 	a := &account{
-		c: c,
-		s: s,
-		p: nil,
-		d: ".",
+		config: cfg,
+		store: s,
+		backend: nil,
+		delim: ".",
+		debug: debug,
 	}
 
 	err := a.connect()
@@ -70,22 +72,21 @@ func (a *account) connect() error {
 	tls := true
 	insecure := false
 	timeout := 30*time.Second
-	debug := true
-	client, err := imap.Connect(a.c.Server, tls, insecure, timeout, debug)
+	client, err := imap.Connect(a.config.Server, tls, insecure, timeout, a.debug)
 	if err != nil { return err }
 
-	cmd := client.Login(a.c.Username, a.c.Password)
+	cmd := client.Login(a.config.Username, a.config.Password)
 	err = cmd.Wait()
 	if err != nil {
 		client.Logout()
 		return err
 	}
 
-	ip := imap.NewIMAPProvider(client, debug)
-	if a.s != nil {
-		ip.SetStore(a.s)
+	ip := imap.NewIMAPProvider(client, a.debug)
+	if a.store != nil {
+		ip.SetStore(a.store)
 	}
-	a.p = ip
+	a.backend = ip
 	return nil
 }
 
@@ -102,10 +103,10 @@ func (a *account) doWithProviderContext(ctx context.Context, f func(provider.Mai
 
 	count := 0
 	for {
-		if a.p == nil {
+		if a.backend == nil {
 			err := a.connect()
 			if err != nil {
-				return fmt.Errorf("failed to connect to %s: %w", a.c.Name, errors.Join(ErrAccountUnavailable, err))
+				return fmt.Errorf("failed to connect to %s: %w", a.config.Name, errors.Join(ErrAccountUnavailable, err))
 			}
 		}
 
@@ -118,20 +119,20 @@ func (a *account) doWithProviderContext(ctx context.Context, f func(provider.Mai
 				}
 			}()
 			done <- f(p)
-		}(a.p)
+		}(a.backend)
 
 		var err error
 		select {
 		case <-ctx.Done():
-			closeProviderAfter(a.p, done)
-			a.p = nil
+			closeProviderAfter(a.backend, done)
+			a.backend = nil
 			return fmt.Errorf("context cancelled: %w", ctx.Err())
 		case err = <-done:
 		}
 
 		if err != nil && isNetworkError(err) {
-			a.p.Close()
-			a.p = nil
+			a.backend.Close()
+			a.backend = nil
 			count = count + 1
 			if count <= retryLimit {
 				time.Sleep(retryWait)
@@ -145,9 +146,9 @@ func (a *account) doWithProviderContext(ctx context.Context, f func(provider.Mai
 
 func (a *account) Close() error {
 
-	if a.p == nil { return nil }
-	err := a.p.Close()
-	a.p = nil
+	if a.backend == nil { return nil }
+	err := a.backend.Close()
+	a.backend = nil
 	return err
 }
 

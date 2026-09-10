@@ -14,7 +14,7 @@ import { messageOperations } from '../services/message-operations';
 import { settingsContext, SettingsStore } from '../store/settings-store';
 import { i18nContext, I18nStore } from '../store/i18n-store';
 import { FLAG_SEEN, FLAG_FLAGGED, FLAG_DRAFT } from '../utils/flags';
-import { FOLDER_INBOX, FOLDER_ARCHIVE, FOLDER_JUNK, FOLDER_TRASH, encodeMailboxPath, mailboxRoleByName, findMailboxNameByRole } from '../utils/folders';
+import { FOLDER_NONE, FOLDER_INBOX, FOLDER_ARCHIVE, FOLDER_JUNK, FOLDER_TRASH, encodeMailboxPath, mailboxRole, mailboxRoleByName, findMailboxNameByRole } from '../utils/folders';
 import type { LayoutMode, DensityMode } from '../store/settings-store';
 import '../components/alps-initial-loader';
 import { Logger } from '../utils/logger';
@@ -49,6 +49,7 @@ export class MailboxPage extends LitElement {
 
   private markReadTimer: ReturnType<typeof setTimeout> | null = null;
   private notificationSound = new Audio('/assets/notify.wav');
+  private notificationTarget = '';
   private audioUnlocked = false;
 
   private unlockAudio = () => {
@@ -231,7 +232,7 @@ export class MailboxPage extends LitElement {
 
   @state() private mailboxes: any[] = [];
   @state() private messages: any[] = [];
-  @state() private currentMailbox = FOLDER_INBOX;
+  @state() private currentMailbox = FOLDER_NONE;
   @state() private loadingMessages = true;
   @state() private showInitialLoader = !(window as any).alpsAppLoaded;
   @state() private selectedMessage: any = null;
@@ -239,7 +240,7 @@ export class MailboxPage extends LitElement {
 
   @state() private layoutMode: LayoutMode = 'vertical';
   @state() private filterQuery = '';
-  @state() private expandedFolders = new Set<string>([FOLDER_INBOX]);
+  @state() private expandedFolders = new Set<string>();
   @state() private username = '';
   @state() private currentPage = 0;
   @state() private totalMessages = 0;
@@ -572,7 +573,7 @@ export class MailboxPage extends LitElement {
         if (prevTotal !== undefined && mb.Total !== undefined && mb.Total > prevTotal) {
           if (!isInitialLoad && background) {
             soundTriggered = true;
-            if (mbName.toUpperCase() === 'INBOX') {
+            if (mailboxRole(mb) === 'inbox') {
               notificationTriggered = true;
               totalNewInboxMessages += (mb.Total - prevTotal);
             }
@@ -606,24 +607,27 @@ export class MailboxPage extends LitElement {
         notification.onclick = () => {
           window.focus();
           notification.close();
-          if (this.currentMailbox !== 'INBOX') {
-            this.updateUrl('INBOX', 0, null);
+          if (this.notificationTarget !== '' && this.currentMailbox !== this.notificationTarget) {
+            this.updateUrl(this.notificationTarget, 0, null);
           } else {
             this.currentPage = 0;
             messageSync.fetch(this.currentMailbox, 0, this.filterQuery, false);
           }
+          this.notificationTarget = '';
         };
       } catch (e) {
         Logger.error('Failed to show desktop notification:', e);
       }
     }
 
-    if (notificationTriggered && this.currentMailbox !== 'INBOX') {
+    if (notificationTriggered && this.notificationTarget !== '' && this.currentMailbox !== this.notificationTarget) {
+      let target = this.notificationTarget;
+      this.notificationTarget = '';
       this.showGlobalToast(
         this.i18nStore?.t('mailboxPage.newMessagesInInbox'), 
         this.i18nStore?.t('mailboxPage.open'), 
         () => {
-          this.updateUrl('INBOX', 0, null);
+          this.updateUrl(target, 0, null);
         }, 
         5000
       );
@@ -682,7 +686,7 @@ export class MailboxPage extends LitElement {
 
   private handleMailboxNotFound = () => {
     this.showGlobalToast(this.i18nStore.t('mailboxPage.mailboxNotFound'), '', undefined, 3000);
-    this.updateUrl(FOLDER_INBOX, 0, null, null);
+    this.updateUrl(FOLDER_NONE, 0, null, null);
   };
 
   private handleHashChange = () => {
@@ -795,7 +799,7 @@ export class MailboxPage extends LitElement {
       }
       this.filterQuery = params.get('q') || '';
     } else {
-      this.currentMailbox = FOLDER_INBOX;
+      this.currentMailbox = FOLDER_NONE;
       this.targetUid = null;
       this.currentPage = 0;
     }
@@ -1003,7 +1007,7 @@ export class MailboxPage extends LitElement {
         let destinationFolder = findMailboxNameByRole('trash', this.currentMailbox, this.mailboxes, FOLDER_TRASH);
         if (action === 'archive') destinationFolder = findMailboxNameByRole('archive', this.currentMailbox, this.mailboxes, FOLDER_ARCHIVE);
         if (action === 'reportSpam') destinationFolder = findMailboxNameByRole('junk', this.currentMailbox, this.mailboxes, FOLDER_JUNK);
-        if (action === 'notSpam') destinationFolder = FOLDER_INBOX;
+        if (action === 'notSpam') destinationFolder = findMailboxNameByRole('inbox', this.currentMailbox, this.mailboxes, FOLDER_INBOX);
 
         if (action === 'delete' && (isTrash || isDrafts || isSpam)) {
           this.pendingDeleteDetails = {
@@ -1397,7 +1401,7 @@ export class MailboxPage extends LitElement {
         this.updateUrl(this.currentMailbox, 0, null, newFilter);
       }}
               @clear-search=${() => {
-                const targetMailbox = this.currentMailbox === '*' ? FOLDER_INBOX : this.currentMailbox;
+                const targetMailbox = this.currentMailbox === '*' ? FOLDER_NONE : this.currentMailbox;
                 this.updateUrl(targetMailbox, 0, null, '');
               }}
               @search-submit=${(e: CustomEvent) => {

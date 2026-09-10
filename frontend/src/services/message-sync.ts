@@ -1,5 +1,5 @@
 import { fetchWithTimeout } from '../utils/fetch-utils';
-import { FOLDER_INBOX, encodeMailboxPath } from '../utils/folders';
+import { FOLDER_NONE, mailboxRole, encodeMailboxPath } from '../utils/folders';
 import { Logger } from '../utils/logger';
 
 export interface MailboxData {
@@ -13,9 +13,22 @@ export interface MailboxData {
 
 export class MessageSyncService extends EventTarget {
   private interval: ReturnType<typeof setInterval> | null = null;
-  private currentMailbox: string = FOLDER_INBOX;
+  private currentMailbox: string = FOLDER_NONE;
   private currentPage: number = 0;
   private currentQuery: string = '';
+  private watchList: string[] = [];
+
+  private updateWatchList(data: MailboxData) {
+
+    let w: string[] = [];
+    data?.Mailboxes?.forEach((mb: any) => {
+      const name = mb.Name || mb.Mailbox || '';
+      if (name != '' && mailboxRole(mb) == 'inbox') {
+        w.push(name);
+      }
+    });
+    this.watchList = w;
+  }
 
   /**
    * Updates the current context for background polling.
@@ -103,6 +116,7 @@ export class MessageSyncService extends EventTarget {
       }
       if (this.currentFetchId !== fetchId) return; // Re-check after artificial delay
 
+      this.updateWatchList(data);
       this.dispatchEvent(new CustomEvent('sync-success', { detail: { data, background: false } }));
     } catch (err) {
       if (this.currentFetchId !== fetchId) return;
@@ -123,10 +137,14 @@ export class MessageSyncService extends EventTarget {
    */
   private async backgroundSync() {
     try {
-      if (this.currentMailbox !== FOLDER_INBOX) {
-        await fetchWithTimeout(`/mailboxes/${FOLDER_INBOX}/status`).catch(() => {});
+      for (const name of this.watchList) {
+        if (name !== this.currentMailbox) {
+          await fetchWithTimeout(`/mailboxes/${encodeMailboxPath(name)}/status`).catch(() => {});
+        }
       }
-      await fetchWithTimeout(`/mailboxes/${encodeMailboxPath(this.currentMailbox)}/status`);
+      if (this.currentMailbox !== FOLDER_NONE) {
+        await fetchWithTimeout(`/mailboxes/${encodeMailboxPath(this.currentMailbox)}/status`);
+      }
 
       let url = `/mailboxes/${encodeMailboxPath(this.currentMailbox)}?page=${this.currentPage}`;
       if (this.currentQuery) url += `&query=${encodeURIComponent(this.currentQuery)}`;
@@ -138,6 +156,7 @@ export class MessageSyncService extends EventTarget {
         return;
       }
       const data: MailboxData = await response.json();
+      this.updateWatchList(data);
       this.dispatchEvent(new CustomEvent('sync-success', { detail: { data, background: true } }));
     } catch (err) {
       Logger.error('Background sync failed', err);

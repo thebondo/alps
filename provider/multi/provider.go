@@ -16,8 +16,7 @@ import (
 const multiDelimiter = '#'
 var multiDelimiterString = string(multiDelimiter)
 
-var unifiedFolderList = []string{ "INBOX" }
-//var unifiedFolderList = []string{ }
+var unifiedFolderList = []string{ }
 
 var ErrInvalidAccount = fmt.Errorf("Invalid account name")
 var ErrInvalidMailbox = fmt.Errorf("Invalid mailbox name")
@@ -98,7 +97,14 @@ func (f *fileStore) Put(key string, v interface{}) error {
 	return nil
 }
 
+type MultipleAccountConfig struct {
+	path         string
+	debug        bool
+	debugBackend bool
+}
+
 type MultipleAccountProvider struct {
+	config       *MultipleAccountConfig
 	store        *fileStore
 	accountOrder []string
 	accountMap   map[string]*account
@@ -110,10 +116,10 @@ type MultipleAccountProvider struct {
 func (p *MultipleAccountProvider) mapAccountMailboxToVirtual(a *account, name string) string {
 
 	if name == "" {
-		return "@" + a.c.Name
+		return "@" + a.config.Name
 	}
-	parts := strings.Split(name, a.d)
-	return "@" + a.c.Name + multiDelimiterString + strings.Join(parts, multiDelimiterString)
+	parts := strings.Split(name, a.delim)
+	return "@" + a.config.Name + multiDelimiterString + strings.Join(parts, multiDelimiterString)
 }
 
 // map a virtual mailbox name to an account and mailbox name
@@ -130,7 +136,7 @@ func (p *MultipleAccountProvider) mapVirtualMailboxToAccount(name string) (*acco
 	if n == 1 {
 		return a, "", nil
 	} else {
-		return a, strings.Join(parts[1:], a.d), nil
+		return a, strings.Join(parts[1:], a.delim), nil
 	}
 }
 
@@ -185,10 +191,10 @@ func (p *MultipleAccountProvider) ListMailboxes() ([]provider.Mailbox, error) {
 		}
 		mailboxes = append(mailboxes, abox)
 
-fmt.Printf("Request mailboxes from %s provider\n", a.c.Name)
+		log.Printf("Request mailboxes from %s provider\n", a.config.Name)
 		tmp, err := a.ListMailboxes()
 		if err != nil {
-			fmt.Printf("List failed for %s: %s\n", a.c.Name, err)
+			fmt.Printf("List failed for %s: %s\n", a.config.Name, err)
 			continue
 		}
 		for _, mbox := range tmp {
@@ -205,15 +211,6 @@ fmt.Printf("Request mailboxes from %s provider\n", a.c.Name)
 
 // GetMailboxStatus returns status for a specific mailbox
 func (p *MultipleAccountProvider) GetMailboxStatus(vMbox string) (*provider.MailboxStatus, error) {
-
-	if vMbox == "INBOX" {
-		return &provider.MailboxStatus{
-			Name:        "INBOX",
-			NumMessages: 0,
-			NumUnseen:   0,
-			UIDValidity: 0,
-		}, nil
-	}
 
 	/* map the virtual name */
 	a, aMbox, err := p.mapVirtualMailboxToAccount(vMbox)
@@ -295,8 +292,6 @@ func (p *MultipleAccountProvider) RenameMailbox(oldVirtualMailbox, newVirtualMai
 // SubscribeMailbox subscribes to a mailbox
 func (p *MultipleAccountProvider) SubscribeMailbox(vMbox string) error {
 
-	if vMbox == "INBOX" { return nil }
-
 	a, aMbox, err := p.mapVirtualMailboxToAccount(vMbox)
 	if err != nil { return err }
 	if aMbox == "" { return nil }
@@ -306,8 +301,6 @@ func (p *MultipleAccountProvider) SubscribeMailbox(vMbox string) error {
 // UnsubscribeMailbox unsubscribes from a mailbox
 func (p *MultipleAccountProvider) UnsubscribeMailbox(vMbox string) error {
 
-	if vMbox == "INBOX" { return nil }
-
 	a, aMbox, err := p.mapVirtualMailboxToAccount(vMbox)
 	if err != nil { return err }
 	if aMbox == "" { return nil }
@@ -316,10 +309,6 @@ func (p *MultipleAccountProvider) UnsubscribeMailbox(vMbox string) error {
 
 // ListMessages returns a paginated list of messages
 func (p *MultipleAccountProvider) ListMessages(vMbox string, sortOrder string, page, pageSize int) ([]provider.Message, int, error) {
-
-	if vMbox == "INBOX" {
-		return nil, 0, nil
-	}
 
 	a, aMbox, err := p.mapVirtualMailboxToAccount(vMbox)
 	if err != nil { return nil, 0, err }
@@ -336,10 +325,6 @@ func (p *MultipleAccountProvider) ListMessages(vMbox string, sortOrder string, p
 
 // SearchMessages searches messages in a mailbox
 func (p *MultipleAccountProvider) SearchMessages(vMbox, query string, sortOrder string, page, pageSize int) ([]provider.Message, int, error) {
-
-	if vMbox == "INBOX" {
-		return nil, 0, nil
-	}
 
 	a, aMbox, err := p.mapVirtualMailboxToAccount(vMbox)
 	if err != nil { return nil, 0, err }
@@ -497,9 +482,9 @@ func (p *MultipleAccountProvider) HasESearchCapability() bool {
 }
 
 
-func newProvider(path string) (provider.MailProvider, error) {
+func newProvider(cfg *MultipleAccountConfig) (provider.MailProvider, error) {
 
-	store, err := newFileStore(path)
+	store, err := newFileStore(cfg.path)
 	if err != nil {
 		return nil, err
 	}
@@ -517,7 +502,7 @@ func newProvider(path string) (provider.MailProvider, error) {
 			log.Printf("provider/multi: account %d has duplicate name %s", i, c.Name)
 			continue
 		}
-		a, err := newAccount(c, store)
+		a, err := newAccount(c, store, cfg.debugBackend)
 		if err != nil {
 			log.Printf("provider/multi: connect failed for %s: %s", c.Name, err)
 			continue
@@ -534,6 +519,7 @@ func newProvider(path string) (provider.MailProvider, error) {
 	}
 
 	return &MultipleAccountProvider{
+		config: cfg,
 		store: store,
 		accountOrder: alist,
 		accountMap: amap,

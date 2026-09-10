@@ -119,6 +119,9 @@ func (p *IMAPProvider) ListMailboxes() ([]provider.Mailbox, error) {
 		for i, attr := range data.Attrs {
 			mbox.Attributes[i] = string(attr)
 		}
+		if strings.ToLower(data.Mailbox) == "inbox" {
+			mbox.Attributes = append(mbox.Attributes, "\\Inbox")
+		}
 		if data.Status != nil {
 			mbox.Unseen = int(*data.Status.NumUnseen)
 			mbox.Total = int(*data.Status.NumMessages)

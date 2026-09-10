@@ -6,7 +6,7 @@ import { composeContext } from '../store/compose-store';
 import type { ComposeStore } from '../store/compose-store';
 import { i18nContext, I18nStore } from '../store/i18n-store';
 import { mailboxOperations } from '../services/mailbox-operations';
-import { FOLDER_INBOX, FOLDER_DRAFTS, FOLDER_SENT, FOLDER_ARCHIVE, FOLDER_ARCHIVES, FOLDER_SPAM, FOLDER_JUNK, FOLDER_TRASH, mailboxRole, findMailboxNameByRole, folderCanBeDeleted } from '../utils/folders';
+import { FOLDER_NONE, FOLDER_INBOX, FOLDER_DRAFTS, FOLDER_SENT, FOLDER_ARCHIVE, FOLDER_ARCHIVES, FOLDER_SPAM, FOLDER_JUNK, FOLDER_TRASH, mailboxRole, findMailboxNameByRole, folderCanBeDeleted } from '../utils/folders';
 import { settingsContext, SettingsStore } from '../store/settings-store';
 import './alps-icon-btn';
 import './ui-prompt';
@@ -418,7 +418,7 @@ export class FolderList extends LitElement {
       const success = await mailboxOperations.deleteMailbox(this.mailboxToDelete);
       if (success) {
         if (this.currentMailbox.startsWith(this.mailboxToDelete)) {
-          this.selectMailbox(FOLDER_INBOX);
+          this.selectMailbox(FOLDER_NONE);
         }
 
         this.dispatchEvent(new CustomEvent('toast', {
@@ -466,7 +466,7 @@ export class FolderList extends LitElement {
       const success = await mailboxOperations.renameMailbox(this.mailboxToDelete, newName);
       if (success) {
         if (this.currentMailbox.startsWith(this.mailboxToDelete)) {
-          this.selectMailbox(FOLDER_INBOX);
+          this.selectMailbox(FOLDER_NONE);
         }
 
         const oldName = this.mailboxToDelete;

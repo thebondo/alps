@@ -1,3 +1,4 @@
+export const FOLDER_NONE = '-';
 export const FOLDER_INBOX = 'INBOX';
 export const FOLDER_DRAFTS = 'Drafts';
 export const FOLDER_SENT = 'Sent';

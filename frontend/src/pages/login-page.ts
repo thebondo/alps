@@ -5,6 +5,7 @@ import { composeContext, ComposeStore } from '../store/compose-store';
 import { i18nContext, I18nStore } from '../store/i18n-store';
 import { renderIcon } from '../utils/ui';
 import { takeLoginNotice, type LoginNotice } from '../utils/login-notice';
+import { FOLDER_NONE } from '../utils/folders';
 
 import '../components/alps-auth-card';
 import '../components/alps-input';
@@ -289,7 +290,7 @@ export class LoginPage extends LitElement {
           this.isSubmitting = false;
         } else {
           window.dispatchEvent(new CustomEvent('user-logged-in'));
-          window.location.hash = '/mailbox/INBOX';
+          window.location.hash = `/mailbox/${FOLDER_NONE}`;
         }
       } else {
         // Check if this is a rate limiting error (HTTP 429)
