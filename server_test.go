@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/migadu/alps/provider"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -22,35 +23,18 @@ func TestParseServerURL(t *testing.T) {
 	assert.Equal(t, "imaps", u.Scheme)
 }
 
-func TestServerPluginConfig(t *testing.T) {
+func TestServerSMTPConfig(t *testing.T) {
 	logger := &NilLogger{}
 
 	// Test 1: Only domain name with scheme
 	opts := &Options{
-		Provider: ProviderOptions{
-			Type: "imap",
-			IMAP: IMAPProviderOptions{Server: "imaps://example.com"},
-		},
-		SMTP: SMTPOptions{Server: "smtps://example.com"},
+		SMTP: SMTPOptions{Server: "smtps://smtp.example.com:123"},
+		Provider: &provider.MockOptions{},
 	}
 	s, err := newServer(logger, opts)
 	assert.NoError(t, err)
-	assert.Equal(t, "example.com:993", s.imap.host)
-
-	// Test 2: Specific schemes
-	opts = &Options{
-		Provider: ProviderOptions{
-			Type: "imap",
-			IMAP: IMAPProviderOptions{Server: "imaps://imap.example.com:993"},
-		},
-		SMTP: SMTPOptions{Server: "smtps://smtp.example.com:465"},
-	}
-	s, err = newServer(logger, opts)
-	assert.NoError(t, err)
-	assert.True(t, s.imap.tls)
-	assert.Equal(t, "imap.example.com:993", s.imap.host)
 	assert.True(t, s.smtp.tls)
-	assert.Equal(t, "smtp.example.com:465", s.smtp.host)
+	assert.Equal(t, "smtp.example.com:123", s.smtp.host)
 }
 
 func TestSanitizeError(t *testing.T) {

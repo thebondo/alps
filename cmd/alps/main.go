@@ -20,12 +20,19 @@ import (
 	"github.com/migadu/alps"
 	"github.com/migadu/alps/cluster"
 	"github.com/migadu/alps/tlsmanager"
+
+	_ "github.com/migadu/alps/provider/imap"
+	_ "github.com/migadu/alps/provider/maildir"
+	_ "github.com/migadu/alps/provider/multi"
+
 	"golang.org/x/text/encoding/charmap"
 	_ "golang.org/x/text/encoding/japanese"
 	_ "golang.org/x/text/encoding/korean"
 	_ "golang.org/x/text/encoding/simplifiedchinese"
 	_ "golang.org/x/text/encoding/traditionalchinese"
 	_ "golang.org/x/text/encoding/unicode"
+
+
 )
 
 func setupCharsetHandling() {

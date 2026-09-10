@@ -38,3 +38,4 @@ func (c *accountConfig) check() error {
 	}
 	return nil
 }
+

@@ -106,51 +106,6 @@ type MultipleAccountProvider struct {
 	unifiedMap   map[string]int
 }
 
-func NewProvider(path string) (provider.MailProvider, error) {
-
-	store, err := newFileStore(path)
-	if err != nil {
-		return nil, err
-	}
-
-	alist := []string{}
-	amap := make(map[string]*account)
-
-	for i, c := range store.accounts() {
-		if err := c.check(); err != nil {
-			log.Printf("provider/multi: invalid account config: %w", err)
-			continue
-		}
-		key := "@" + c.Name
-		if _, ok := amap[key]; ok {
-			log.Printf("provider/multi: account %d has duplicate name %s", i, c.Name)
-			continue
-		}
-		a, err := newAccount(c, store)
-		if err != nil {
-			log.Printf("provider/multi: connect failed for %s: %s", c.Name, err)
-			continue
-		}
-		alist = append(alist, key)
-		amap[key] = a
-	}
-
-	ulist := []string{}
-	umap := make(map[string]int)
-	for i, name := range unifiedFolderList {
-		ulist = append(ulist, name)
-		umap[name] = i
-	}
-
-	return &MultipleAccountProvider{
-		store: store,
-		accountOrder: alist,
-		accountMap: amap,
-		unifiedOrder: ulist,
-		unifiedMap: umap,
-	}, nil
-}
-
 // map an account and mailbox name to a virtual mailbox name
 func (p *MultipleAccountProvider) mapAccountMailboxToVirtual(a *account, name string) string {
 
@@ -539,4 +494,50 @@ func (p *MultipleAccountProvider) HasThreadCapability() bool {
 func (p *MultipleAccountProvider) HasESearchCapability() bool {
 
 	return false
+}
+
+
+func newProvider(path string) (provider.MailProvider, error) {
+
+	store, err := newFileStore(path)
+	if err != nil {
+		return nil, err
+	}
+
+	alist := []string{}
+	amap := make(map[string]*account)
+
+	for i, c := range store.accounts() {
+		if err := c.check(); err != nil {
+			log.Printf("provider/multi: invalid account config: %s", err)
+			continue
+		}
+		key := "@" + c.Name
+		if _, ok := amap[key]; ok {
+			log.Printf("provider/multi: account %d has duplicate name %s", i, c.Name)
+			continue
+		}
+		a, err := newAccount(c, store)
+		if err != nil {
+			log.Printf("provider/multi: connect failed for %s: %s", c.Name, err)
+			continue
+		}
+		alist = append(alist, key)
+		amap[key] = a
+	}
+
+	ulist := []string{}
+	umap := make(map[string]int)
+	for i, name := range unifiedFolderList {
+		ulist = append(ulist, name)
+		umap[name] = i
+	}
+
+	return &MultipleAccountProvider{
+		store: store,
+		accountOrder: alist,
+		accountMap: amap,
+		unifiedOrder: ulist,
+		unifiedMap: umap,
+	}, nil
 }

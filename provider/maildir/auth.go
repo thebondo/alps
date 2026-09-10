@@ -1,6 +1,7 @@
 package maildir
 
 import (
+	"time"
 	"bufio"
 	"crypto/md5"
 	"crypto/sha256"
@@ -9,6 +10,10 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"path/filepath"
+
+	"github.com/migadu/alps/provider"
+	"github.com/BurntSushi/toml"
 
 	"golang.org/x/crypto/bcrypt"
 )
@@ -18,7 +23,7 @@ var ErrInvalidCredentials = fmt.Errorf("invalid credentials")
 
 // Authenticate verifies the username and password against a Dovecot passwd file.
 // Returns the parsed user home directory if successful, or an error.
-func Authenticate(passwdFile, username, password string) (string, error) {
+func authenticate(passwdFile, username, password string) (string, error) {
 	file, err := os.Open(passwdFile)
 	if err != nil {
 		return "", fmt.Errorf("failed to open passwd file: %w", err)
@@ -105,4 +110,69 @@ func verifyHash(password, hash string) error {
 	default:
 		return fmt.Errorf("unsupported hash scheme: %s", scheme)
 	}
+}
+
+type options struct {
+	Path           string `toml:"path"`
+	AuthPasswdFile string `toml:"auth_passwd_file"`
+}
+
+func (o *options) Type() string {
+
+	return "maildir"
+}
+
+func (o *options) CreateFactory(timeout time.Duration) provider.AuthenticatedProviderFactory {
+
+	return func(username, password string) (provider.MailProvider, error) {
+
+		// Authenticate against dovecot passwd file
+		homeDir, err := authenticate(o.AuthPasswdFile, username, password)
+		if err != nil {
+			return nil, err
+		}
+
+		// Use explicit Maildir path if provided, resolving %u and %d, otherwise use homeDir/Maildir
+		path := o.Path
+		if path != "" {
+			parts := strings.Split(username, "@")
+			domain := ""
+			user := username
+			if len(parts) == 2 {
+				user = parts[0]
+				domain = parts[1]
+			}
+			path = strings.ReplaceAll(path, "%u", user)
+			path = strings.ReplaceAll(path, "%n", username) // Sometimes %n is full username
+			path = strings.ReplaceAll(path, "%d", domain)
+		} else {
+			path = filepath.Join(homeDir, "Maildir")
+		}
+
+		return newProvider(path, username), nil
+	}
+}
+
+func configure(raw *toml.Primitive) (provider.Options, error) {
+
+	if raw == nil {
+		return nil, fmt.Errorf("missing configuration for [provider.multi]")
+	}
+
+	var opt options
+	err := toml.PrimitiveDecode(*raw, &opt)
+	if err != nil {
+		return nil, fmt.Errorf("error decoding configuration for [provider.maildir]: %v", err)
+	}
+
+	if opt.AuthPasswdFile == "" {
+		return nil, fmt.Errorf("no password file specified in config file for maildir provider ([provider.maildir] path)")
+	}
+
+	return &opt, nil
+}
+
+func init() {
+
+	provider.Register("maildir", configure)
 }

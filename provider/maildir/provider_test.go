@@ -18,7 +18,7 @@ func (m *mockMessage) WriteTo(w io.Writer) (int64, error) {
 
 func TestProviderMailboxes(t *testing.T) {
 	tmpDir := t.TempDir()
-	p := NewProvider(tmpDir, "testuser")
+	p := newProvider(tmpDir, "testuser")
 
 	// Create INBOX manually since maildir package requires an Init for root
 	inboxDir := p.getDir("INBOX")
@@ -85,7 +85,7 @@ func TestProviderMailboxes(t *testing.T) {
 
 func TestProviderMessages(t *testing.T) {
 	tmpDir := t.TempDir()
-	p := NewProvider(tmpDir, "testuser")
+	p := newProvider(tmpDir, "testuser")
 
 	inboxDir := p.getDir("INBOX")
 	inboxDir.Init()
@@ -183,7 +183,7 @@ func TestProviderMessages(t *testing.T) {
 // checked for "date-asc", so "asc" was ignored and always sorted descending.
 func TestMaildir_SortOrderAscending(t *testing.T) {
 	tmpDir := t.TempDir()
-	p := NewProvider(tmpDir, "testuser")
+	p := newProvider(tmpDir, "testuser")
 	if err := p.getDir("INBOX").Init(); err != nil {
 		t.Fatalf("init INBOX: %v", err)
 	}

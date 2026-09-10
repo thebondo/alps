@@ -15,7 +15,7 @@ type Provider struct {
 	username string
 }
 
-func NewProvider(basePath, username string) *Provider {
+func newProvider(basePath, username string) *Provider {
 	return &Provider{
 		basePath: basePath,
 		username: username,

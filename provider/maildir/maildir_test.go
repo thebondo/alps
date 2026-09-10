@@ -13,7 +13,7 @@ func TestStore_GetAndPut(t *testing.T) {
 	// Create a temporary directory to act as the Maildir base path
 	basePath := t.TempDir()
 
-	p := NewProvider(basePath, "testuser")
+	p := newProvider(basePath, "testuser")
 	store, err := p.GetStore()
 	assert.NoError(t, err)
 	assert.NotNil(t, store)

@@ -9,7 +9,7 @@ import (
 func TestStore(t *testing.T) {
 	tmpDir := t.TempDir()
 
-	provider := NewProvider(tmpDir, "testuser")
+	provider := newProvider(tmpDir, "testuser")
 	store, err := provider.GetStore()
 	if err != nil {
 		t.Fatalf("failed to get store: %v", err)
