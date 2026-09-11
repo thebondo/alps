@@ -141,8 +141,10 @@ func (p *IMAPProvider) ListMailboxes() ([]provider.Mailbox, error) {
 		}
 		return mailboxes[i].Name < mailboxes[j].Name
 	})
-	for i, x := range mailboxes {
-		fmt.Printf("IMAP mailbox %d = %s (%s)\n", i, x.Name, strings.Join(x.Attributes, ", "))
+	if p.debug {
+		for i, x := range mailboxes {
+			fmt.Printf("provider/imap: mailbox %d = %s, total = %d, unseen = %d, attr = (%s)\n", i, x.Name, x.Total, x.Unseen, strings.Join(x.Attributes, ", "))
+		}
 	}
 	return mailboxes, nil
 }

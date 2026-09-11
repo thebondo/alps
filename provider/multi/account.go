@@ -48,6 +48,7 @@ type account struct {
 	backend provider.MailProvider
 	delim string
 	debug bool
+	unified map[string]string
 }
 
 func newAccount(cfg *accountConfig, s provider.Store, debug bool) (*account, error) {
@@ -58,6 +59,7 @@ func newAccount(cfg *accountConfig, s provider.Store, debug bool) (*account, err
 		backend: nil,
 		delim: ".",
 		debug: debug,
+		unified: make(map[string]string),
 	}
 
 	err := a.connect()
@@ -90,6 +92,15 @@ func (a *account) connect() error {
 	return nil
 }
 
+func (a *account) setUnifiedName(uName, name string) {
+
+	a.unified[uName] = name
+}
+
+func (a *account) getUnifiedName(uName string) string {
+
+	return a.unified[uName]
+}
 
 func (a *account) doWithProvider(f func(provider.MailProvider) error) error {
 

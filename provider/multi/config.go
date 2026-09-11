@@ -8,6 +8,7 @@ import (
 
 type userConfig struct {
 	Accounts []*accountConfig           `json:"accounts"`
+	Unified []string                    `json:"unified"`
 	Settings map[string]json.RawMessage `json:"settings"`
 }
 
