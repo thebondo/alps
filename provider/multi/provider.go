@@ -17,7 +17,7 @@ import (
 const multiDelimiter = '#'
 var multiDelimiterString = string(multiDelimiter)
 
-var ErrInvalidMailbox = fmt.Errorf("Invalid mailbox name")
+var ErrInvalidMailbox = errors.New("Invalid mailbox name")
 
 type fileStore struct {
 	path string
@@ -131,7 +131,7 @@ type MultipleAccountProvider struct {
 	accountOrder []string
 	accountMap   map[string]*account
 	unifiedOrder []string
-	unifiedMap   map[string]int
+	unifiedMap   map[string]*unifiedMailbox
 }
 
 func (p *MultipleAccountProvider) isUnified(name string) bool {
@@ -143,25 +143,24 @@ func (p *MultipleAccountProvider) isUnified(name string) bool {
 }
 
 // map an account and mailbox name to a virtual mailbox name
-func (p *MultipleAccountProvider) mapAccountMailboxToVirtualDetails(a *account, name string) (string, string) {
+func (p *MultipleAccountProvider) mapAccountMailboxToVirtualDetails(a *account, name string) (string, *unifiedMailbox) {
 
-	uName := ""
 	if name == "" {
-		return "@" + a.config.Name, uName
+		return "@" + a.config.Name, nil
 	}
 	parts := strings.Split(name, a.delim)
-	uName = normalizeUnifiedName(parts[0])
+	uName := normalizeUnifiedName(parts[0])
 	if uName != "" {
-		_, ok := p.unifiedMap[name]
+		umb, ok := p.unifiedMap[name]
 		if ok {
 			if len(parts) == 1 {
-				return uName + multiDelimiterString +  "@" + a.config.Name, uName
+				return uName + multiDelimiterString +  "@" + a.config.Name, umb
 			} else {
-				return uName + multiDelimiterString +  "@" + a.config.Name + multiDelimiterString + strings.Join(parts[1:], multiDelimiterString), uName
+				return uName + multiDelimiterString +  "@" + a.config.Name + multiDelimiterString + strings.Join(parts[1:], multiDelimiterString), umb
 			}
 		}
 	}
-	return "@" + a.config.Name + multiDelimiterString + strings.Join(parts, multiDelimiterString), uName
+	return "@" + a.config.Name + multiDelimiterString + strings.Join(parts, multiDelimiterString), nil
 }
 
 // map an account and mailbox name to a virtual mailbox name
@@ -178,6 +177,13 @@ var allowUnified nameMappingFlag = 2
 var allowAny = allowAccount | allowUnified
 
 // map a virtual mailbox name to an account and mailbox name
+// In general, there are 4 possible forms of the response. If flags does not include allowAccount, then
+// form 2 will not be returned. If flags does not include allowUnified, then form 4 will not be returned.
+//
+//    1. nil,     "",           ErrInvalidMailbox     For any errors
+//    2. account, "",           nil                   For the top level of an account
+//    3. account, mailbox       nil                   For a mailbox in an account
+//    4. nil,     UNIFIED_NAME, nil                   For the top level of a unified mailbox
 func (p *MultipleAccountProvider) mapVirtualMailboxToAccount(name string, flags nameMappingFlag) (*account, string, error) {
 
 	parts := strings.Split(name, multiDelimiterString)
@@ -249,6 +255,8 @@ func (p *MultipleAccountProvider) ListMailboxes() ([]provider.Mailbox, error) {
 	umap := make(map[string]int)
 
 	for _, name := range p.unifiedOrder {
+		umb := p.unifiedMap[name]
+		umb.clear()
 		mbox := provider.Mailbox{
 			Name: name,
 			Delimiter: multiDelimiter,
@@ -279,10 +287,11 @@ func (p *MultipleAccountProvider) ListMailboxes() ([]provider.Mailbox, error) {
 			continue
 		}
 		for _, mbox := range tmp {
-			vName, uName := p.mapAccountMailboxToVirtualDetails(a, mbox.Name)
-			if uName != "" {
-				a.setUnifiedName(uName, mbox.Name)
-				index, ok := umap[uName]
+			vName, umb := p.mapAccountMailboxToVirtualDetails(a, mbox.Name)
+			if umb != nil {
+				a.setUnifiedName(umb.name, mbox.Name)
+				umb.addSource(a, mbox.Name)
+				index, ok := umap[umb.name]
 				if ok {
 					u := &mailboxes[index]
 					if mbox.Total >= 0 && mbox.Unseen >= 0 {
@@ -310,16 +319,7 @@ func (p *MultipleAccountProvider) GetMailboxStatus(vMbox string) (*provider.Mail
 	/* map the virtual name */
 	a, aMbox, err := p.mapVirtualMailboxToAccount(vMbox, allowAny)
 	if err != nil { return nil, err }
-
-	/* handle the top level unified folder case */
-	if a == nil {
-		return &provider.MailboxStatus{
-			Name:        aMbox,
-			NumMessages: 0,
-			NumUnseen:   0,
-			UIDValidity: 0,
-		}, nil
-	}
+	if a == nil { return p.unifiedMap[aMbox].getStatus() }
 
 	/* handle the bare account case */
 	if aMbox == "" {
@@ -347,16 +347,8 @@ func (p *MultipleAccountProvider) FindMailboxByType(mboxType provider.MailboxTyp
 // CreateMailbox creates a new mailbox
 func (p *MultipleAccountProvider) CreateMailbox(vMbox string) error {
 
-	a, aMbox, err := p.mapVirtualMailboxToAccount(vMbox, allowAny)
+	a, aMbox, err := p.mapVirtualMailboxToAccount(vMbox, allowNone)
 	if err != nil { return err }
-
-	if a == nil {
-		return fmt.Errorf("cannot create entry in unified folder")
-	}
-	if aMbox == "" {
-		return fmt.Errorf("cannot create account level entry")
-	}
-
 	return a.CreateMailbox(aMbox)
 }
 
@@ -395,7 +387,8 @@ func (p *MultipleAccountProvider) SubscribeMailbox(vMbox string) error {
 
 	a, aMbox, err := p.mapVirtualMailboxToAccount(vMbox, allowAny)
 	if err != nil { return err }
-	if a == nil || aMbox == "" { return nil }
+	if aMbox == "" { return nil }
+	if a == nil { return p.unifiedMap[aMbox].subscribe() }
 	return a.SubscribeMailbox(aMbox)
 }
 
@@ -404,7 +397,8 @@ func (p *MultipleAccountProvider) UnsubscribeMailbox(vMbox string) error {
 
 	a, aMbox, err := p.mapVirtualMailboxToAccount(vMbox, allowAny)
 	if err != nil { return err }
-	if a == nil || aMbox == "" { return nil }
+	if aMbox == "" { return nil }
+	if a == nil { return p.unifiedMap[aMbox].unsubscribe() }
 	return a.UnsubscribeMailbox(aMbox)
 }
 
@@ -413,7 +407,8 @@ func (p *MultipleAccountProvider) ListMessages(vMbox string, sortOrder string, p
 
 	a, aMbox, err := p.mapVirtualMailboxToAccount(vMbox, allowAny)
 	if err != nil { return nil, 0, err }
-	if a == nil || aMbox == "" { return nil, 0, nil }
+	if aMbox == "" { return nil, 0, nil }
+	if a == nil { return p.unifiedMap[aMbox].listMessages(sortOrder, page, pageSize) }
 
 	list, count, err := a.ListMessages(aMbox, sortOrder, page, pageSize)
 	if err != nil { return nil, 0, err }
@@ -429,7 +424,9 @@ func (p *MultipleAccountProvider) SearchMessages(vMbox, query string, sortOrder 
 
 	a, aMbox, err := p.mapVirtualMailboxToAccount(vMbox, allowAny)
 	if err != nil { return nil, 0, err }
-	if a == nil || aMbox == "" { return nil, 0, nil }
+	if aMbox == "" { return nil, 0, nil }
+	if a == nil { return p.unifiedMap[aMbox].searchMessages(query, sortOrder, page, pageSize) }
+
 	list, count, err := a.SearchMessages(aMbox, query, sortOrder, page, pageSize)
 	if err != nil { return nil, 0, err }
 	n := len(list)
@@ -636,12 +633,12 @@ func newProvider(cfg *MultipleAccountConfig) (provider.MailProvider, error) {
 	}
 
 	ulist := []string{}
-	umap := make(map[string]int)
+	umap := make(map[string]*unifiedMailbox)
 	for _, name := range store.unified() {
 		name = normalizeUnifiedName(name)
 		if name != "" {
 			if _, ok := umap[name]; !ok {
-				umap[name] = len(ulist)
+				umap[name] = newUnifiedMailbox(name)
 				ulist = append(ulist, name)
 			}
 		}

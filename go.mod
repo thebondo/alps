@@ -28,6 +28,8 @@ require (
 	golang.org/x/text v0.39.0
 )
 
+require github.com/mattn/go-sqlite3 v1.14.52 // indirect
+
 require (
 	github.com/armon/go-metrics v0.4.1 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.10 // indirect
