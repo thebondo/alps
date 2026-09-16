@@ -1,5 +1,6 @@
 export const fr = {
   settings: {
+    saveFailed: 'Impossible d’enregistrer ce réglage — il pourrait ne pas survivre à la déconnexion',
     title: 'Paramètres',
     categories: {
       general: 'Général',
@@ -65,7 +66,8 @@ export const fr = {
       sortUid: 'Date de classement dans le dossier',
       sortDate: 'Date de réception',
       enableThreading: 'Utiliser le fil de discussion',
-      themeIframeContent: 'Appliquer le thème au contenu des messages HTML'
+      themeIframeContent: 'Appliquer le thème au contenu des messages HTML',
+      threadingNotSupported: "Non pris en charge par votre serveur de messagerie"
     },
     appearance: {
       colorTheme: 'Thème de couleur',
@@ -85,7 +87,9 @@ export const fr = {
       loose: 'Large',
       normal: 'Normal',
       compact: 'Compact',
-      ultraCompact: 'Ultra compact'
+      ultraCompact: 'Ultra compact',
+      showSenderAvatars: 'Afficher les avatars des expéditeurs',
+      showSenderAvatarsDesc: 'Images et initiales à côté des expéditeurs dans la liste des messages et le lecteur. La vérification de l\'expéditeur est affichée dans tous les cas.'
     },
     localization: {
       language: 'Langue',
@@ -100,7 +104,8 @@ export const fr = {
       serbian: 'Српски (Ћирилица)',
       serbianLatin: 'Srpski (Latinica)',
       french: 'Français',
-      portuguese: 'Português'
+      portuguese: 'Português',
+      danish: 'Dansk'
     },
   },
   linkedAccounts: {
@@ -131,8 +136,10 @@ export const fr = {
     pleaseWait: 'Veuillez patienter',
     wait: 'Patienter',
     signedOut: 'Vous avez été déconnecté.',
+    signedOutDraftsLost: 'Vous avez été déconnecté. Certains brouillons non envoyés n’ont pas pu être enregistrés et ont été perdus.',
     sessionExpired: 'Votre session a expiré. Veuillez vous reconnecter.',
-    inactivitySignedOut: "Vous avez été déconnecté pour cause d'inactivité."
+    inactivitySignedOut: "Vous avez été déconnecté pour cause d'inactivité.",
+    inactivitySignedOutDraftsLost: "Vous avez été déconnecté pour cause d'inactivité. Certains brouillons non envoyés n’ont pas pu être enregistrés et ont été perdus."
   },
   folderList: {
     compose: 'Nouveau message',
@@ -148,6 +155,7 @@ export const fr = {
     delete: 'Supprimer',
     createFolder: 'Créer un dossier',
     renameFolder: 'Renommer le dossier',
+    folderName: 'Nom du dossier',
     deleteFolder: 'Supprimer le dossier',
     deleteFolderConfirm: 'Êtes-vous sûr de vouloir supprimer "{folder}" ? Tous les messages qu\'il contient seront définitivement supprimés.',
     expandSidebar: 'Développer la barre latérale',
@@ -155,9 +163,20 @@ export const fr = {
     moveToTrash: 'Déplacer vers la corbeille',
     moveToTrashConfirm: 'Êtes-vous sûr de vouloir déplacer "{folder}" vers la corbeille ?',
     createSubfolder: 'Créer un sous-dossier',
-    createSubfolderUnder: 'Créer un sous-dossier sous "{folder}"'
+    createSubfolderUnder: 'Créer un sous-dossier sous "{folder}"',
+    subscribe: "S’abonner",
+    unsubscribe: "Se désabonner",
+    order: "Ordre",
+    moveToTop: "Placer en haut",
+    moveUp: "Monter",
+    moveDown: "Descendre",
+    moveToBottom: "Placer en bas"
+  },
+  search: {
+    placeholder: 'Rechercher des messages',
   },
   messageList: {
+    menu: 'Menu',
     selectAll: 'Sélectionner tous les messages',
     checkNew: 'Vérifier les nouveaux messages',
     sortDesc: 'Trier par date décroissante',
@@ -165,6 +184,8 @@ export const fr = {
     filterStarred: 'Filtrer par favoris',
     filterUnread: 'Filtrer par non lus',
     noMessages: 'Aucun message',
+    loadError: 'Impossible de charger ce dossier.',
+    loadErrorRetry: 'Réessayer',
     loading: 'Chargement...',
     unknownSender: 'Expéditeur inconnu',
     unknown: 'Inconnu',
@@ -184,10 +205,14 @@ export const fr = {
     emptyMailboxFailed: 'Échec du vidage de la boîte aux lettres. Assurez-vous qu\'il s\'agit de la Corbeille ou des Indésirables.'
   },
   composer: {
+    discardFailed: 'Le brouillon n’a pas pu être supprimé du serveur et se trouve toujours dans les brouillons.',
+    attachmentsTooLarge: 'Les pièces jointes dépassent la taille maximale autorisée.',
+    draftSaveFailedKeepOpen: 'Impossible d’enregistrer ce brouillon — la fenêtre reste ouverte pour ne rien perdre',
     attachmentsWait: 'Veuillez attendre que le téléchargement des pièces jointes soit terminé avant d\'envoyer.',
     sending: 'Envoi du message en cours...',
     undo: 'Annuler',
-    sendError: 'Échec de l\'envoi du message : {error}'
+    sendError: 'Échec de l\'envoi du message : {error}',
+    presendFailed: 'Une extension de sécurité n\'a pas pu traiter ce message, il n\'a donc pas été envoyé.'
   },
   messageComposer: {
     fontSize: 'Taille de la police',
@@ -258,6 +283,7 @@ export const fr = {
     unknownError: 'Erreur inconnue'
   },
   messageReader: {
+    moreOptions: 'Plus d\u2019options',
     tags: 'Étiquettes',
     removeAllTags: 'Supprimer toutes les étiquettes',
     removeTag: 'Supprimer l\'étiquette',
@@ -299,6 +325,7 @@ export const fr = {
     showOriginal: 'Afficher l\'original',
     verifiedSender: 'Expéditeur vérifié',
     unverifiedSender: 'Expéditeur non vérifié',
+    senderUnverifiedWarning: 'Votre serveur de messagerie n\'a pas pu vérifier cet expéditeur. Le message ne vient peut-être pas de qui il prétend être, soyez donc prudent avec ses liens et ses pièces jointes.',
     clickToExpand: 'Cliquer pour développer le contenu du message'
   },
   originalMessage: {
@@ -331,13 +358,29 @@ export const fr = {
     actionCopy: 'Copier vers'
   },
   attachment: {
-    remove: 'Supprimer'
+    remove: 'Supprimer',
+    preview: 'Aperçu',
+    download: 'Télécharger',
+    zoomIn: 'Zoom avant',
+    zoomOut: 'Zoom arrière',
+    rotate: 'Faire pivoter',
+    fitToScreen: 'Ajuster à l’écran',
+    previous: 'Précédent',
+    next: 'Suivant',
+    copyContent: 'Copier le contenu',
+    copied: 'Copié !',
+    openInNewTab: 'Ouvrir dans un nouvel onglet',
+    cannotPreview: 'Aucun aperçu disponible pour ce type de fichier',
+    loadingPreview: 'Chargement de l’aperçu...',
+    errorLoading: 'Échec du chargement de l’aperçu',
+    close: 'Fermer'
   },
 
   navigation: {
     messages: 'Messages',
     contacts: 'Contacts',
-    calendar: 'Calendrier'
+    calendar: 'Calendrier',
+    tasks: 'Tâches'
   },
   userMenu: {
     settings: 'Paramètres',
@@ -353,30 +396,71 @@ export const fr = {
     messagePermanentlyDeleted: 'Message définitivement supprimé',
     draftDiscarded: 'Brouillon ignoré',
     folderRenamed: 'Dossier renommé',
+    tagNotSupported: 'Ce serveur de messagerie ne prend pas en charge cette étiquette',
+    flagChangeFailed: 'Impossible de mettre à jour les messages',
+    folderCreated: 'Dossier créé',
+    folderExists: 'Un dossier portant ce nom existe déjà',
+    folderCreateFailed: 'Impossible de créer le dossier',
+    folderRenameFailed: 'Impossible de renommer le dossier',
+    folderDeleteFailed: 'Impossible de supprimer le dossier',
+    folderUndoFailed: 'Impossible d’annuler',
     folderMovedToTrash: 'Dossier déplacé vers la corbeille',
     folderPermanentlyDeleted: 'Dossier définitivement supprimé',
     undo: 'Annuler',
     dismiss: 'Fermer',
     messageMovedToArchive: 'Message déplacé dans les archives',
-    messagesMovedToArchive: '{count} messages déplacés dans les archives',
+    messagesMovedToArchive: {
+      one: "{count} message déplacé dans les archives",
+      other: "{count} messages déplacés dans les archives"
+    },
     messageMovedToSpam: 'Message déplacé dans les indésirables',
-    messagesMovedToSpam: '{count} messages déplacés dans les indésirables',
+    messagesMovedToSpam: {
+      one: "{count} message déplacé dans les indésirables",
+      other: "{count} messages déplacés dans les indésirables"
+    },
     messageMovedToInbox: 'Message déplacé dans la boîte de réception',
-    messagesMovedToInbox: '{count} messages déplacés dans la boîte de réception',
+    messagesMovedToInbox: {
+      one: "{count} message déplacé dans la boîte de réception",
+      other: "{count} messages déplacés dans la boîte de réception"
+    },
     messageMovedToTrash: 'Message déplacé dans la corbeille',
-    messagesMovedToTrash: '{count} messages déplacés dans la corbeille',
+    messagesMovedToTrash: {
+      one: "{count} message déplacé dans la corbeille",
+      other: "{count} messages déplacés dans la corbeille"
+    },
     messageMovedToFolder: 'Message déplacé vers {folder}',
-    messagesMovedToFolder: '{count} messages déplacés vers {folder}',
+    messagesMovedToFolder: {
+      one: "{count} message déplacé vers {folder}",
+      other: "{count} messages déplacés vers {folder}"
+    },
     messageCopiedToFolder: 'Message copié vers {folder}',
-    messagesCopiedToFolder: '{count} messages copiés vers {folder}',
-    draftsDiscarded: '{count} brouillons supprimés',
-    messagesPermanentlyDeleted: '{count} messages définitivement supprimés'
+    messagesCopiedToFolder: {
+      one: "{count} message copié vers {folder}",
+      other: "{count} messages copiés vers {folder}"
+    },
+    draftsDiscarded: {
+      one: "{count} brouillon supprimé",
+      other: "{count} brouillons supprimés"
+    },
+    messagesPermanentlyDeleted: {
+      one: "{count} message définitivement supprimé",
+      other: "{count} messages définitivement supprimés"
+    },
+    undoFailed: 'Impossible d’annuler',
+    messageDeleteFailed: 'Le message n\'a pas pu être supprimé',
+    moveFailed: 'Impossible de déplacer',
+    copyFailed: 'Impossible de copier',
+    subscribeFailed: "Impossible de s’abonner",
+    unsubscribeFailed: "Impossible de se désabonner"
   },
   mailboxPage: {
     mailboxNotFound: 'Boîte de réception introuvable',
     newMessages: 'Nouveaux messages',
     newMessagesSingleBody: 'Vous avez 1 nouveau message',
-    newMessagesMultiBody: 'Vous avez {count} nouveaux messages',
+    newMessagesMultiBody: {
+      one: "Vous avez {count} nouveau message",
+      other: "Vous avez {count} nouveaux messages"
+    },
     newMessagesInInbox: 'Nouveaux messages dans la boîte de réception',
     newMessagesAvailable: 'Nouveaux messages disponibles',
     open: 'Ouvrir',
@@ -390,12 +474,24 @@ export const fr = {
     description: 'Connexion réseau interrompue',
     tryingAgain: 'Nouvel essai dans {seconds} secondes...'
   },
+  update: {
+    available: 'Une nouvelle version est disponible.',
+    reload: 'Recharger'
+  },
   general: {
     error: 'Erreur',
     cancel: 'Annuler',
     save: 'Enregistrer',
     optional: 'Facultatif',
-    delete: 'Supprimer'
+    delete: 'Supprimer',
+    clear: "Effacer",
+    showPassword: "Afficher le mot de passe",
+    hidePassword: "Masquer le mot de passe",
+    previous: "Précédent",
+    next: "Suivant",
+    expand: "Développer",
+    collapse: "Réduire",
+    notFound: "Page introuvable"
   },
   webauthn: {
     title: 'Vérification de la clé de sécurité',
@@ -429,7 +525,8 @@ export const fr = {
       keys_title: 'Clés de sécurité',
       noKeys: 'Aucune clé enregistrée.',
       added: 'Ajouté',
-      remove_btn: 'Supprimer'
+      remove_btn: 'Supprimer',
+      unnamed_key: "Clé de sécurité"
     }
   }
 };

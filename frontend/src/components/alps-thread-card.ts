@@ -6,7 +6,7 @@ import { settingsContext, SettingsStore } from '../store/settings-store';
 import { i18nContext, I18nStore } from '../store/i18n-store';
 import { composeContext, ComposeStore } from '../store/compose-store';
 import { FLAG_SEEN, FLAG_FLAGGED, FLAG_DRAFT } from '../utils/flags';
-import { renderIcon, formatFullDate, getBimiAvatarUrl } from '../utils/ui';
+import { renderIcon, formatFullDate, bimiAvatarUrlFor } from '../utils/ui';
 import { extractSnippet, setupIframeSizing } from '../utils/reader-utils';
 
 import './alps-recipient-pill';
@@ -14,6 +14,7 @@ import './alps-attachment-list';
 import './alps-icon-btn';
 import './alps-button';
 import './alps-avatar';
+import './alps-sender-auth-badge';
 import './alps-popup';
 import './alps-banner';
 import './alps-loader';
@@ -48,6 +49,7 @@ export class AlpsThreadCard extends LitElement {
 
   @property({ type: Object }) item!: ThreadMessageItem;
   @property({ type: String }) mailbox!: string;
+  @property({ type: Boolean }) showSenderAvatars = true;
 
   static styles = css`
     :host {
@@ -109,33 +111,8 @@ export class AlpsThreadCard extends LitElement {
     }
 
     .avatar-container {
-      position: relative;
       display: inline-flex;
-    }
-
-    .bimi-badge {
-      position: absolute;
-      bottom: -2px;
-      right: -2px;
-      color: var(--success, #10b981);
-      background: var(--bg-primary, #ffffff);
-      border-radius: 50%;
-      width: 14px;
-      height: 14px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      box-shadow: 0 0 0 1px var(--bg-primary, #ffffff);
-    }
-
-    .bimi-badge.bimi-failed-badge {
-      color: var(--error, #ef4444);
-    }
-
-    .bimi-badge svg {
-      width: 12px;
-      height: 12px;
-      fill: currentColor;
+      flex-shrink: 0;
     }
 
     .thread-card-snippet {
@@ -445,6 +422,11 @@ export class AlpsThreadCard extends LitElement {
       ` : ''}
 
       <div class="message-content">
+        ${msg.HasBimiFailed ? html`
+          <alps-banner variant="warning" style="margin-bottom: 12px;">
+            <span>${this.i18nStore?.t('messageReader.senderUnverifiedWarning')}</span>
+          </alps-banner>
+        ` : ''}
         ${this.item.activeBanners && this.item.activeBanners.length > 0 ? html`
           ${this.item.activeBanners.map((banner: any) => banner)}
         ` : ''}
@@ -493,8 +475,7 @@ export class AlpsThreadCard extends LitElement {
     const hourFormat = String(this.settingsStore?.getState()?.hourFormat || '12');
     const dateStr = msg.Envelope?.Date ? formatFullDate(msg.Envelope.Date, dateFormat, hourFormat) : '';
 
-    const domain = sender.Host ? sender.Host.toLowerCase() : '';
-    const bimiUrl = getBimiAvatarUrl(domain);
+    const bimiUrl = bimiAvatarUrlFor(msg, sender);
 
     const isStarred = msg.Flags?.includes(FLAG_FLAGGED);
     const isUnread = !msg.Flags?.includes(FLAG_SEEN);
@@ -507,19 +488,13 @@ export class AlpsThreadCard extends LitElement {
       <div class="thread-card ${this.item.expanded ? 'expanded' : ''} ${isUnread ? 'unread' : ''}">
         <div class="thread-card-header" @click=${this.handleCardHeaderClick}>
           <div class="thread-card-summary">
-            <div class="avatar-container">
-              <alps-avatar .name=${senderName} .email=${senderAddress} .size=${28} .src=${bimiUrl}></alps-avatar>
-              ${msg.HasBimiPotential ? html`
-                <div class="bimi-badge" title="${this.i18nStore?.t('messageReader.verifiedSender')}">
-                  ${renderIcon('verifiedBadge')}
-                </div>
-              ` : msg.HasBimiFailed ? html`
-                <div class="bimi-badge bimi-failed-badge" title="${this.i18nStore?.t('messageReader.unverifiedSender')}">
-                  ${renderIcon('authFailedBadge')}
-                </div>
-              ` : ''}
-            </div>
+            ${this.showSenderAvatars ? html`
+              <div class="avatar-container">
+                <alps-avatar .name=${senderName} .email=${senderAddress} .size=${28} .src=${bimiUrl}></alps-avatar>
+              </div>
+            ` : ''}
             <div class="thread-card-sender ${isUnread ? 'unread' : ''}">${senderName}</div>
+            <alps-sender-auth-badge ?verified=${!!msg.HasBimiPotential} ?failed=${!!msg.HasBimiFailed}></alps-sender-auth-badge>
             ${!this.item.expanded ? html`<div class="thread-card-snippet">${snippet}</div>` : ''}
           </div>
           <div class="thread-card-meta">
@@ -572,7 +547,7 @@ export class AlpsThreadCard extends LitElement {
             <alps-icon-btn
               style="--icon-size: 16px; --btn-padding: 4px;"
               icon=${this.item.expanded ? 'caretUp' : 'caretDown'}
-              title=${this.item.expanded ? 'Collapse' : 'Expand'}
+              title=${this.item.expanded ? this.i18nStore?.t('general.collapse') : this.i18nStore?.t('general.expand')}
             ></alps-icon-btn>
           </div>
         </div>

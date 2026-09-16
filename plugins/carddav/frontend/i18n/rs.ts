@@ -1,5 +1,12 @@
 export default {
   contacts: {
+    deleteFailed: '{failed} од {total} контаката није могло бити обрисано.',
+    categoryRenameFailed: '{failed} од {total} контаката није могло бити ажурирано, категорија је само делимично преименована.',
+    categoryDeleteFailed: '{failed} од {total} контаката није могло бити ажурирано, категорија је само делимично уклоњена.',
+    categoryUpdateFailed: '{failed} од {total} контаката није могло бити ажурирано.',
+    saveFailed: 'Контакт није могао бити сачуван.',
+    saveConflict: 'Контакт је измењен на другом уређају, па ваша измена није сачувана. Откажите измену да бисте видели најновију верзију.',
+    starFailed: 'Контакт није могао бити ажуриран.',
     unnamedContact: 'Неименовани контакт',
     title: 'Контакти',
     allContacts: 'Сви контакти',
@@ -28,7 +35,11 @@ export default {
     cancel: 'Откажи',
     noContacts: 'Нема пронађених контаката',
     selectContact: 'Изаберите контакт за приказ детаља',
-    selectedContacts: '{count} контаката изабрано',
+    selectedContacts: {
+      one: '{count} контакт изабран',
+      few: '{count} контакта изабрана',
+      other: '{count} контаката изабрано'
+    },
     clearSelection: 'Очисти избор',
     selectAll: 'Изабери све',
     clearSearch: 'Очисти претрагу',

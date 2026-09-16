@@ -1,3 +1,4 @@
+import { renderIcon } from '../../../frontend/src/utils/ui';
 import { LitElement, html, css } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import type { EventData } from './calendar-service';
@@ -16,6 +17,25 @@ export class CalendarTimeGrid extends LitElement {
     @property({ type: Array }) days: Date[] = [];
     @property({ type: Array }) events: EventData[] = [];
     @state() private scrolled = false;
+    /** The clock behind the now-line. It also decides which column is today,
+     *  so the line cannot sit in a column the header no longer marks. */
+    @state() private now = new Date();
+
+    private nowTimer?: number;
+
+    connectedCallback() {
+        super.connectedCallback();
+        this.now = new Date();
+        this.nowTimer = window.setInterval(() => { this.now = new Date(); }, 60_000);
+    }
+
+    disconnectedCallback() {
+        super.disconnectedCallback();
+        if (this.nowTimer !== undefined) {
+            clearInterval(this.nowTimer);
+            this.nowTimer = undefined;
+        }
+    }
 
     static styles = css`
         :host {
@@ -221,15 +241,63 @@ export class CalendarTimeGrid extends LitElement {
             box-shadow: 0 1px 2px rgba(0,0,0,0.1);
             opacity: 0.9;
         }
+        /* An invitation the user declined stays in view, so it can be taken
+           back, but reads as not happening. */
+        .declined {
+            opacity: 0.55;
+            text-decoration: line-through;
+        }
+
         .event-chip:hover {
             opacity: 1;
+        }
+        /* A task's chip: outlined in its calendar's colour, marked with a check,
+           so it does not read as an all-day event. Doubled to outrank the
+           all-day chip's own background. */
+        .event-chip.event-chip.task {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            background-color: var(--bg-primary, #ffffff);
+            color: var(--text-primary, #111827);
+            border: 1px solid;
+            border-left-width: 3px;
+            box-shadow: none;
+        }
+        .event-chip.task svg {
+            flex-shrink: 0;
+            width: 12px;
+            height: 12px;
+            fill: currentColor;
+        }
+
+        .now-line {
+            position: absolute;
+            left: 0;
+            right: 0;
+            border-top: 2px solid var(--error, #ef4444);
+            /* Above the event popups (z-index 5), so an event cannot bury it. */
+            z-index: 6;
+            pointer-events: none;
+        }
+        .now-line::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            /* The padding box starts below the 2px border, so -5px centers the
+               8px dot on the line. */
+            top: -5px;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: var(--error, #ef4444);
         }
     `;
 
     private getEventsForDate(date: Date, includeAllDay: boolean) {
         if (!this.events) return [];
         return this.events.filter(e => {
-            const isAllDay = isAllDayEvent(e.start, e.end);
+            const isAllDay = isAllDayEvent(e);
             if (includeAllDay !== isAllDay) return false;
 
             const dayStart = new Date(date);
@@ -265,7 +333,10 @@ export class CalendarTimeGrid extends LitElement {
         newDate.setHours(hour, 0, 0, 0);
 
         this.dispatchEvent(new CustomEvent('create-event', {
-            detail: { date: newDate },
+            // The intent is stated rather than left to the editor, which read any
+            // midnight as a day-cell click: the top (00:00) row of the week and
+            // day grids opened the all-day form.
+            detail: { date: newDate, allDay: false },
             bubbles: true,
             composed: true
         }));
@@ -276,7 +347,7 @@ export class CalendarTimeGrid extends LitElement {
         newDate.setHours(0, 0, 0, 0);
 
         this.dispatchEvent(new CustomEvent('create-event', {
-            detail: { date: newDate },
+            detail: { date: newDate, allDay: true },
             bubbles: true,
             composed: true
         }));
@@ -292,7 +363,7 @@ export class CalendarTimeGrid extends LitElement {
 
     render() {
         const hours = Array.from({length: 24}, (_, i) => i);
-        const today = new Date();
+        const today = new Date(this.now);
         today.setHours(0,0,0,0);
 
         return html`
@@ -303,7 +374,7 @@ export class CalendarTimeGrid extends LitElement {
                             <div class="time-axis-spacer"></div>
                             <div class="time-grid-days">
                                 ${this.days.map(d => {
-                                    const isToday = d.getTime() === today.getTime();
+                                    const isToday = d.getFullYear() === today.getFullYear() && d.getMonth() === today.getMonth() && d.getDate() === today.getDate();
                                     return html`
                                         <div class="time-grid-day-header">
                                             <span class="time-grid-day-name">${this.i18nStore?.t(`calendar.daysShort.${d.getDay()}`)}</span>
@@ -324,10 +395,10 @@ export class CalendarTimeGrid extends LitElement {
                                             ${allDayEvents.map(e => html`
                                                 <alps-popup align="left" position="bottom" style="width: 100%; display: block;" @click=${(ev: Event) => ev.stopPropagation()}>
                                                     <div slot="trigger"
-                                                        class="event-chip" 
-                                                        style=${e.color ? `background-color: ${e.color}` : ''}
+                                                        class="event-chip ${e.task ? 'task' : ''} ${e.status === 'declined' ? 'declined' : ''}" 
+                                                        style=${e.task ? `border-color: ${e.color}` : e.color ? `background-color: ${e.color}` : ''}
                                                         title="${e.summary || (this.i18nStore?.t('calendar.noTitle'))}">
-                                                        ${e.summary || (this.i18nStore?.t('calendar.noTitle'))}
+                                                        ${e.task ? renderIcon('checkCircle') : ''}${e.summary || (this.i18nStore?.t('calendar.noTitle'))}
                                                     </div>
                                                     <calendar-event-preview .event=${e}></calendar-event-preview>
                                                 </alps-popup>
@@ -352,9 +423,13 @@ export class CalendarTimeGrid extends LitElement {
                                 dayStart.setHours(0,0,0,0);
                                 const dayEnd = new Date(d);
                                 dayEnd.setHours(23,59,59,999);
+                                const isToday = dayStart.getTime() === today.getTime();
 
                                 return html`
                                     <div class="time-column" @click=${(e: MouseEvent) => this.handleColumnClick(e, d)} style="cursor: pointer;">
+                                        ${isToday ? html`
+                                            <div class="now-line" style="top: ${(this.now.getHours() + this.now.getMinutes() / 60) * 48}px"></div>
+                                        ` : ''}
                                         ${timedEvents.map(e => {
                                             const start = new Date(e.start);
                                             const end = new Date(e.end);
@@ -364,8 +439,12 @@ export class CalendarTimeGrid extends LitElement {
                                             const renderEnd = end > dayEnd ? dayEnd : end;
 
                                             const top = (renderStart.getHours() * 48) + (renderStart.getMinutes() / 60 * 48);
-                                            const durationMinutes = (renderEnd.getTime() - renderStart.getTime()) / 1000 / 60;
-                                            let height = (durationMinutes / 60) * 48;
+                                            // Both ends read off the wall clock, like the hour lines behind
+                                            // them. Elapsed time is not wall-clock distance on a DST day: an
+                                            // 01:00-04:00 event on a spring-forward Sunday is two real hours,
+                                            // so a height from milliseconds stopped at the 03:00 line.
+                                            const bottom = (renderEnd.getHours() * 48) + (renderEnd.getMinutes() / 60 * 48);
+                                            let height = bottom - top;
                                             
                                             // Ensure minimum height for visibility, but don't overflow bottom
                                             if (height < 20) height = 20;
@@ -378,7 +457,7 @@ export class CalendarTimeGrid extends LitElement {
                                                     style="top: ${top}px; height: ${height}px;"
                                                     @click=${(ev: Event) => ev.stopPropagation()}>
                                                     <div slot="trigger"
-                                                        class="time-event" 
+                                                        class="time-event ${e.status === 'declined' ? 'declined' : ''}" 
                                                         style="${e.color ? `background-color: ${e.color}; border-color: ${e.color};` : ''}" 
                                                         title="${e.summary || (this.i18nStore?.t('calendar.noTitle'))}">
                                                         <div class="time-event-title">${e.summary || (this.i18nStore?.t('calendar.noTitle'))}</div>

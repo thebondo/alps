@@ -1,4 +1,5 @@
 import { html, css, LitElement } from 'lit';
+import { renderIcon } from '../utils/ui';
 import { customElement, state } from 'lit/decorators.js';
 import { Router } from '../router';
 import { registry } from '../plugin-registry';
@@ -16,6 +17,7 @@ import { provide } from '@lit/context';
 import './alps-floating-composer';
 import './toast-notification';
 import './ui-modal';
+import './alps-attachment-preview';
 import { composeContext, ComposeStore } from '../store/compose-store';
 import type { ComposerInstance } from '../store/compose-store';
 import { settingsContext, SettingsStore } from '../store/settings-store';
@@ -24,8 +26,11 @@ import { linkedAccountsContext, linkedAccountsStore } from '../store/linked-acco
 import { autoLogoutService } from '../services/auto-logout';
 import { clearSessionSettings } from '../store/settings-store';
 import { setLoginNotice } from '../utils/login-notice';
+import { applyUpdate, registerBusyProbe, UPDATE_AVAILABLE_EVENT } from '../services/app-update';
 
 const DEFAULT_TOAST_TIMEOUT_MS = 3000;
+/** Long enough to be read and acted on; the automatic paths catch a missed one. */
+const UPDATE_TOAST_MS = 15000;
 
 interface ToastItem {
   id: number;
@@ -54,6 +59,7 @@ export class AppRoot extends LitElement {
   @state() private activeComposers: ComposerInstance[] = [];
 
   @state() private toasts: ToastItem[] = [];
+  @state() private attachmentPreview: { attachments: any[]; mailbox: string; messageUid: string; index: number } | null = null;
   private toastIdCounter = 0;
 
   @state() private isOffline: boolean = !navigator.onLine;
@@ -61,6 +67,22 @@ export class AppRoot extends LitElement {
   private offlineInterval: number | null = null;
 
   static styles = css`
+    /* The offline modal's glyph. It was a hand-written <use> pointing at the
+       sprite with its OWN cache-busting query — ?v=7, where renderIcon uses
+       ?v=11 — so the browser treated it as a second 64 KB resource that nothing
+       else in the app ever requests. Which made the one icon shown BECAUSE the
+       network is down the one icon guaranteed not to be in cache: a fresh
+       fetch, while offline, that cannot succeed. */
+    .offline-icon {
+      color: var(--text-muted, #9ca3af);
+      margin-bottom: 16px;
+    }
+    .offline-icon .icon {
+      width: 48px;
+      height: 48px;
+      fill: currentColor;
+    }
+
     :host {
       display: block;
       height: 100vh;
@@ -92,6 +114,11 @@ export class AppRoot extends LitElement {
       window.location.hash = '#/login';
     }
 
+    // The settings store reports a failed save as a toast and needs the active
+    // dictionary to do it. It is not a component, so it cannot consume the Lit
+    // context the rest of the app reads i18n through.
+    this.settingsStore.setI18n(this.i18nStore);
+
     this.composeStore.addEventListener('change', this._handleComposeChange);
     this.settingsStore.addEventListener('change', this._handleSettingsChange);
     this.activeComposers = this.composeStore.getState().activeComposers;
@@ -99,9 +126,9 @@ export class AppRoot extends LitElement {
     // Initialize auto-logout
     const autoLogoutTime = this.settingsStore.getState().autoLogout ?? 0;
     autoLogoutService.setLogoutTime(autoLogoutTime);
-    autoLogoutService.onBeforeLogout = async () => {
-      await this.composeStore.saveAllDirtyDrafts();
-    };
+    // Returns the count, so auto-logout can say drafts were lost exactly as the
+    // Sign Out button does. The wrapper used to await it and discard the answer.
+    autoLogoutService.onBeforeLogout = () => this.composeStore.saveAllDirtyDrafts();
 
     // Initialize language
     const initialLang = this.settingsStore.getState().language ?? 'en';
@@ -116,6 +143,11 @@ export class AppRoot extends LitElement {
     window.addEventListener('dragover', this._handleGlobalDragOver);
     window.addEventListener('drop', this._handleGlobalDrop);
     window.addEventListener('plugins-updated', this._handlePluginsUpdated as EventListener);
+    window.addEventListener('open-attachment-preview', this._handleOpenAttachmentPreview as EventListener);
+    window.addEventListener(UPDATE_AVAILABLE_EVENT, this._handleUpdateAvailable);
+    // A reload waits while a composer is open. Asked of this element because
+    // the composers render inside its shadow root, out of a document query's reach.
+    registerBusyProbe(() => this.composeStore.getState().activeComposers.length > 0);
 
     if (this.isOffline) {
       this._handleOfflineEvent();
@@ -126,6 +158,12 @@ export class AppRoot extends LitElement {
       this._fetchSessionData();
     }
   }
+
+  private _handleOpenAttachmentPreview = (e: CustomEvent) => {
+    const { attachments, mailbox, messageUid, index } = e.detail ?? {};
+    if (!Array.isArray(attachments) || attachments.length === 0) return;
+    this.attachmentPreview = { attachments, mailbox, messageUid, index: index ?? 0 };
+  };
 
   private _handlePluginsUpdated = () => {
     this.requestUpdate();
@@ -151,6 +189,7 @@ export class AppRoot extends LitElement {
     this.settingsStore.removeEventListener('change', this._handleSettingsChange);
     window.removeEventListener('auth-error', this._handleAuthError);
     window.removeEventListener('show-toast', this._handleShowToast as EventListener);
+    window.removeEventListener('open-attachment-preview', this._handleOpenAttachmentPreview as EventListener);
     window.removeEventListener('beforeunload', this._handleBeforeUnload);
     window.removeEventListener('online', this._handleOnlineEvent);
     window.removeEventListener('offline', this._handleOfflineEvent);
@@ -158,6 +197,8 @@ export class AppRoot extends LitElement {
     window.removeEventListener('dragover', this._handleGlobalDragOver);
     window.removeEventListener('drop', this._handleGlobalDrop);
     window.removeEventListener('plugins-updated', this._handlePluginsUpdated as EventListener);
+    window.removeEventListener(UPDATE_AVAILABLE_EVENT, this._handleUpdateAvailable);
+    registerBusyProbe(null);
     this._stopOfflineCountdown();
   }
 
@@ -173,7 +214,14 @@ export class AppRoot extends LitElement {
   private _handleAuthError = () => {
     sessionStorage.clear();
     clearSessionSettings();
-    window.dispatchEvent(new CustomEvent('session-cleared'));
+    // An EXPIRY, not a sign-out, and the two must not be the same event. This
+    // dispatched the bare sign-out signal, so compose-store deleted every unsent
+    // draft from storage the moment any request came back 401 — including the
+    // send the user had just pressed, whose message was destroyed before
+    // sendDraft returned. 7487097 closed that loss on the boot redirect; this was
+    // the same loss through the door left open. Sign-out and idle auto-logout
+    // still dispatch it bare, and still clear.
+    window.dispatchEvent(new CustomEvent('session-cleared', { detail: { reason: 'expired' } }));
     setLoginNotice('sessionExpired');
     window.location.hash = '#/login';
   };
@@ -262,7 +310,12 @@ export class AppRoot extends LitElement {
     const id = ++this.toastIdCounter;
     const newToast: ToastItem = {
       id,
-      message: e.detail.message,
+      // `i18nKey` lets a caller that has no i18n context of its own — a store,
+      // a plain module — name the string instead of resolving it. Resolved
+      // here, where the dictionary is.
+      message: e.detail.message
+        ?? (e.detail.i18nKey ? this.i18nStore?.t(e.detail.i18nKey) : undefined)
+        ?? '',
       actionLabel: e.detail.actionLabel || '',
       actionFn: e.detail.actionFn,
       dismissFn: e.detail.dismissFn,
@@ -293,6 +346,18 @@ export class AppRoot extends LitElement {
       e.preventDefault();
       return 'You have a message currently sending. Are you sure you want to leave?';
     }
+  };
+
+  /** A newer build is served: offered through the same toast as everything else. */
+  private _handleUpdateAvailable = () => {
+    this._handleShowToast(new CustomEvent('show-toast', {
+      detail: {
+        i18nKey: 'update.available',
+        actionLabel: this.i18nStore?.t('update.reload'),
+        actionFn: applyUpdate,
+        duration: UPDATE_TOAST_MS,
+      },
+    }));
   };
 
   private _handleComposeChange = () => {
@@ -339,7 +404,7 @@ export class AppRoot extends LitElement {
 
   private router = new Router(
     this.getRoutes(),
-    () => html`<div>404 Not Found</div>`,
+    () => html`<div>404 — ${this.i18nStore.t('general.notFound')}</div>`,
     () => this.requestUpdate()
   );
 
@@ -383,17 +448,25 @@ export class AppRoot extends LitElement {
         `)}
       </div>
 
+      ${this.attachmentPreview ? html`
+        <alps-attachment-preview
+          .attachments=${this.attachmentPreview.attachments}
+          .mailbox=${this.attachmentPreview.mailbox}
+          .messageUid=${this.attachmentPreview.messageUid}
+          .activeIndex=${this.attachmentPreview.index}
+          @close=${() => { this.attachmentPreview = null; }}
+        ></alps-attachment-preview>
+      ` : ''}
+
       ${this.isOffline ? html`
         <ui-modal title=${this.i18nStore.t('offline.title')} .dismissible=${false} width="400px">
           <div style="text-align: center; padding: 16px 0;">
-            <svg style="width: 48px; height: 48px; color: var(--text-muted, #9ca3af); margin-bottom: 16px; fill: currentColor;">
-              <use href="/assets/icons/sprite.svg?v=7#wifiSlash"></use>
-            </svg>
+            <div class="offline-icon">${renderIcon('wifiSlash')}</div>
             <div style="font-weight: 500; font-size: 16px; margin-bottom: 8px; color: var(--text-primary, #111827);">
               ${this.i18nStore.t('offline.description')}
             </div>
             <div style="color: var(--text-secondary, #4b5563); font-size: 14px;">
-              ${this.i18nStore.t('offline.tryingAgain').replace('{seconds}', this.offlineCountdown.toString())}
+              ${this.i18nStore.t('offline.tryingAgain', { seconds: this.offlineCountdown })}
             </div>
           </div>
         </ui-modal>

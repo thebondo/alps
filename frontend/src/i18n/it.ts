@@ -1,5 +1,6 @@
 export const it = {
   settings: {
+    saveFailed: 'Impossibile salvare questa impostazione — potrebbe non sopravvivere alla disconnessione',
     title: 'Impostazioni',
     categories: {
       general: 'Generale',
@@ -65,7 +66,8 @@ export const it = {
       sortUid: 'Data archiviazione cartella',
       sortDate: 'Data di ricezione',
       enableThreading: 'Usa il threading',
-      themeIframeContent: 'Applica il tema al contenuto dei messaggi HTML'
+      themeIframeContent: 'Applica il tema al contenuto dei messaggi HTML',
+      threadingNotSupported: "Non supportato dal tuo server di posta"
     },
     appearance: {
       colorTheme: 'Tema colori',
@@ -85,7 +87,9 @@ export const it = {
       loose: 'Largo',
       normal: 'Normale',
       compact: 'Compatto',
-      ultraCompact: 'Ultra compatto'
+      ultraCompact: 'Ultra compatto',
+      showSenderAvatars: 'Mostra gli avatar dei mittenti',
+      showSenderAvatarsDesc: 'Immagini e iniziali accanto ai mittenti nell\'elenco dei messaggi e nel lettore. La verifica del mittente viene mostrata in ogni caso.'
     },
     localization: {
       language: 'Lingua',
@@ -100,7 +104,8 @@ export const it = {
       serbian: 'Serbo',
       serbianLatin: 'Serbo (Latino)',
       french: 'Francese',
-      portuguese: 'Portoghese'
+      portuguese: 'Portoghese',
+      danish: 'Danese'
     },
   },
   linkedAccounts: {
@@ -131,8 +136,10 @@ export const it = {
     pleaseWait: 'Attendere prego',
     wait: 'Attendi',
     signedOut: 'Sei stato disconnesso.',
+    signedOutDraftsLost: 'La sessione è stata chiusa. Alcune bozze non inviate non sono state salvate e sono andate perse.',
     sessionExpired: "La tua sessione è scaduta. Effettua di nuovo l'accesso.",
-    inactivitySignedOut: 'Sei stato disconnesso per inattività.'
+    inactivitySignedOut: 'Sei stato disconnesso per inattività.',
+    inactivitySignedOutDraftsLost: "Sei stato disconnesso per inattività. Alcune bozze non inviate non sono state salvate e sono andate perse."
   },
   folderList: {
     compose: 'Componi',
@@ -148,6 +155,7 @@ export const it = {
     delete: 'Elimina',
     createFolder: 'Crea cartella',
     renameFolder: 'Rinomina cartella',
+    folderName: 'Nome della cartella',
     deleteFolder: 'Elimina cartella',
     deleteFolderConfirm: 'Sei sicuro di voler eliminare "{folder}"? Tutti i messaggi all\'interno verranno eliminati definitivamente.',
     expandSidebar: 'Espandi barra laterale',
@@ -155,9 +163,20 @@ export const it = {
     moveToTrash: 'Sposta nel cestino',
     moveToTrashConfirm: 'Sei sicuro di voler spostare "{folder}" nel Cestino?',
     createSubfolder: 'Crea sottocartella',
-    createSubfolderUnder: 'Crea sottocartella in "{folder}"'
+    createSubfolderUnder: 'Crea sottocartella in "{folder}"',
+    subscribe: "Sottoscrivi",
+    unsubscribe: "Annulla sottoscrizione",
+    order: "Ordine",
+    moveToTop: "Sposta in cima",
+    moveUp: "Sposta su",
+    moveDown: "Sposta giù",
+    moveToBottom: "Sposta in fondo"
+  },
+  search: {
+    placeholder: 'Cerca nella posta',
   },
   messageList: {
+    menu: 'Menu',
     selectAll: 'Seleziona tutti i messaggi',
     checkNew: 'Controlla nuovi messaggi',
     sortDesc: 'Ordina decrescente per data',
@@ -165,6 +184,8 @@ export const it = {
     filterStarred: 'Filtra per speciali',
     filterUnread: 'Filtra per non letti',
     noMessages: 'Nessun messaggio',
+    loadError: 'Impossibile caricare questa cartella.',
+    loadErrorRetry: 'Riprova',
     loading: 'Caricamento...',
     unknownSender: 'Mittente sconosciuto',
     unknown: 'Sconosciuto',
@@ -184,10 +205,14 @@ export const it = {
     emptyMailboxFailed: 'Impossibile svuotare la casella di posta. Assicurati che sia Cestino o Posta indesiderata.'
   },
   composer: {
+    discardFailed: 'Non è stato possibile eliminare la bozza dal server ed è ancora nelle bozze.',
+    attachmentsTooLarge: 'Gli allegati superano la dimensione massima consentita.',
+    draftSaveFailedKeepOpen: 'Impossibile salvare questa bozza — la finestra resta aperta per non perdere nulla',
     attachmentsWait: 'Attendi il caricamento degli allegati prima di inviare.',
     sending: 'Invio messaggio in corso...',
     undo: 'Annulla',
-    sendError: 'Errore durante l\'invio del messaggio: {error}'
+    sendError: 'Errore durante l\'invio del messaggio: {error}',
+    presendFailed: 'Un plugin di sicurezza non ha potuto elaborare questo messaggio, che non è stato inviato.'
   },
   messageComposer: {
     fontSize: 'Dimensione carattere',
@@ -258,6 +283,7 @@ export const it = {
     unknownError: 'Errore sconosciuto'
   },
   messageReader: {
+    moreOptions: 'Altre opzioni',
     tags: 'Etichette',
     removeAllTags: 'Rimuovi tutte le etichette',
     removeTag: 'Rimuovi etichetta',
@@ -299,6 +325,7 @@ export const it = {
     showOriginal: 'Mostra originale',
     verifiedSender: 'Mittente verificato',
     unverifiedSender: 'Mittente non verificato',
+    senderUnverifiedWarning: 'Il tuo server di posta non è riuscito a verificare questo mittente. Il messaggio potrebbe non provenire da chi dichiara, quindi fai attenzione a link e allegati.',
     clickToExpand: 'Clicca per espandere il contenuto del messaggio'
   },
   originalMessage: {
@@ -331,13 +358,29 @@ export const it = {
     actionCopy: 'Copia in'
   },
   attachment: {
-    remove: 'Rimuovi'
+    remove: 'Rimuovi',
+    preview: 'Anteprima',
+    download: 'Scarica',
+    zoomIn: 'Ingrandisci',
+    zoomOut: 'Rimpicciolisci',
+    rotate: 'Ruota',
+    fitToScreen: 'Adatta allo schermo',
+    previous: 'Precedente',
+    next: 'Successivo',
+    copyContent: 'Copia contenuto',
+    copied: 'Copiato!',
+    openInNewTab: 'Apri in una nuova scheda',
+    cannotPreview: 'Nessuna anteprima disponibile per questo tipo di file',
+    loadingPreview: 'Caricamento anteprima...',
+    errorLoading: 'Impossibile caricare l’anteprima',
+    close: 'Chiudi'
   },
 
   navigation: {
     messages: 'Messaggi',
     contacts: 'Contatti',
-    calendar: 'Calendario'
+    calendar: 'Calendario',
+    tasks: 'Attività'
   },
   userMenu: {
     settings: 'Impostazioni',
@@ -353,30 +396,71 @@ export const it = {
     messagePermanentlyDeleted: 'Messaggio eliminato definitivamente',
     draftDiscarded: 'Bozza scartata',
     folderRenamed: 'Cartella rinominata',
+    tagNotSupported: 'Questo server di posta non supporta quel tag',
+    flagChangeFailed: 'Impossibile aggiornare i messaggi',
+    folderCreated: 'Cartella creata',
+    folderExists: 'Esiste già una cartella con quel nome',
+    folderCreateFailed: 'Impossibile creare la cartella',
+    folderRenameFailed: 'Impossibile rinominare la cartella',
+    folderDeleteFailed: 'Impossibile eliminare la cartella',
+    folderUndoFailed: 'Impossibile annullare',
     folderMovedToTrash: 'Cartella spostata nel Cestino',
     folderPermanentlyDeleted: 'Cartella eliminata definitivamente',
     undo: 'Annulla',
     dismiss: 'Ignora',
     messageMovedToArchive: 'Messaggio spostato in Archivio',
-    messagesMovedToArchive: '{count} messaggi spostati in Archivio',
+    messagesMovedToArchive: {
+      one: "{count} messaggio spostato in Archivio",
+      other: "{count} messaggi spostati in Archivio"
+    },
     messageMovedToSpam: 'Messaggio spostato in Spam',
-    messagesMovedToSpam: '{count} messaggi spostati in Spam',
+    messagesMovedToSpam: {
+      one: "{count} messaggio spostato in Spam",
+      other: "{count} messaggi spostati in Spam"
+    },
     messageMovedToInbox: 'Messaggio spostato in Posta in arrivo',
-    messagesMovedToInbox: '{count} messaggi spostati in Posta in arrivo',
+    messagesMovedToInbox: {
+      one: "{count} messaggio spostato in Posta in arrivo",
+      other: "{count} messaggi spostati in Posta in arrivo"
+    },
     messageMovedToTrash: 'Messaggio spostato nel Cestino',
-    messagesMovedToTrash: '{count} messaggi spostati nel Cestino',
+    messagesMovedToTrash: {
+      one: "{count} messaggio spostato nel Cestino",
+      other: "{count} messaggi spostati nel Cestino"
+    },
     messageMovedToFolder: 'Messaggio spostato in {folder}',
-    messagesMovedToFolder: '{count} messaggi spostati in {folder}',
+    messagesMovedToFolder: {
+      one: "{count} messaggio spostato in {folder}",
+      other: "{count} messaggi spostati in {folder}"
+    },
     messageCopiedToFolder: 'Messaggio copiato in {folder}',
-    messagesCopiedToFolder: '{count} messaggi copiati in {folder}',
-    draftsDiscarded: '{count} bozze eliminate',
-    messagesPermanentlyDeleted: '{count} messaggi eliminati definitivamente'
+    messagesCopiedToFolder: {
+      one: "{count} messaggio copiato in {folder}",
+      other: "{count} messaggi copiati in {folder}"
+    },
+    draftsDiscarded: {
+      one: "{count} bozza eliminata",
+      other: "{count} bozze eliminate"
+    },
+    messagesPermanentlyDeleted: {
+      one: "{count} messaggio eliminato definitivamente",
+      other: "{count} messaggi eliminati definitivamente"
+    },
+    undoFailed: 'Impossibile annullare',
+    messageDeleteFailed: 'Non è stato possibile eliminare il messaggio',
+    moveFailed: 'Impossibile spostare',
+    copyFailed: 'Impossibile copiare',
+    subscribeFailed: "Impossibile sottoscrivere",
+    unsubscribeFailed: "Impossibile annullare la sottoscrizione"
   },
   mailboxPage: {
     mailboxNotFound: 'Casella di posta non trovata',
     newMessages: 'Nuovi messaggi',
     newMessagesSingleBody: 'Hai 1 nuovo messaggio',
-    newMessagesMultiBody: 'Hai {count} nuovi messaggi',
+    newMessagesMultiBody: {
+      one: "Hai {count} nuovo messaggio",
+      other: "Hai {count} nuovi messaggi"
+    },
     newMessagesInInbox: 'Nuovi messaggi nella Posta in arrivo',
     newMessagesAvailable: 'Nuovi messaggi disponibili',
     open: 'Apri',
@@ -390,12 +474,24 @@ export const it = {
     description: 'Connessione di rete persa',
     tryingAgain: 'Nuovo tentativo in {seconds} secondi...'
   },
+  update: {
+    available: 'È disponibile una nuova versione.',
+    reload: 'Ricarica'
+  },
   general: {
     error: 'Errore',
     cancel: 'Annulla',
     save: 'Salva',
     optional: 'Opzionale',
-    delete: 'Elimina'
+    delete: 'Elimina',
+    clear: "Cancella",
+    showPassword: "Mostra password",
+    hidePassword: "Nascondi password",
+    previous: "Precedente",
+    next: "Successivo",
+    expand: "Espandi",
+    collapse: "Comprimi",
+    notFound: "Pagina non trovata"
   },
   webauthn: {
     title: 'Verifica della chiave di sicurezza',
@@ -429,7 +525,8 @@ export const it = {
       keys_title: 'Chiavi di sicurezza',
       noKeys: 'Nessuna chiave registrata.',
       added: 'Aggiunto',
-      remove_btn: 'Rimuovi'
+      remove_btn: 'Rimuovi',
+      unnamed_key: "Chiave di sicurezza"
     }
   }
 };

@@ -59,6 +59,9 @@ const NAME_TO_ROLE: Record<string, MailboxRole> = {
   [FOLDER_SPAM.toLowerCase()]: 'junk',
   [FOLDER_JUNK.toLowerCase()]: 'junk',
   [FOLDER_TRASH.toLowerCase()]: 'trash',
+  // Exchange's Trash. Was a private regex in message-list's isDiscardableFolder,
+  // which meant the Delete All banner knew this name and nothing else did.
+  'deleted items': 'trash',
 };
 
 /**
@@ -72,7 +75,7 @@ const NAME_TO_ROLE: Record<string, MailboxRole> = {
  * See GitHub issue #4 (secondary). Returns null when the mailbox is not special
  * (or is a \Noselect / \NonExistent placeholder).
  */
-export function mailboxRole(mb: any): MailboxRole | null {
+export function mailboxRole(mb: any, advertised?: Set<MailboxRole>): MailboxRole | null {
   if (!mb) return null;
   const attrs: any[] = Array.isArray(mb.Attrs) ? mb.Attrs : [];
   const lowerAttrs = attrs.map(a => (typeof a === 'string' ? a.toLowerCase() : ''));
@@ -85,7 +88,13 @@ export function mailboxRole(mb: any): MailboxRole | null {
     return null;
   }
   const name: string = mb.Name || mb.Mailbox || '';
-  return NAME_TO_ROLE[name.toLowerCase()] ?? null;
+  const byName = NAME_TO_ROLE[name.toLowerCase()] ?? null;
+  // A name is a guess, and only for a role the server has not assigned itself.
+  // This used to answer by name for ANY mailbox lacking an attribute, even when
+  // another mailbox carried that very attribute — so beside a \Trash called
+  // "Papierkorb", a leftover folder called "Trash" was trash as well, and
+  // findMailboxNameByRole returned whichever the server happened to list first.
+  return byName && advertised?.has(byName) ? null : byName;
 }
 
 /**
@@ -95,9 +104,11 @@ export function mailboxRole(mb: any): MailboxRole | null {
  */
 export function mailboxRoleByName(name: string, mailboxes: any[] = []): MailboxRole | null {
   if (!name) return null;
+  const advertised = advertisedRoles(mailboxes);
   const mb = (mailboxes || []).find(m => (m?.Name || m?.Mailbox) === name);
-  if (mb) return mailboxRole(mb);
-  return NAME_TO_ROLE[name.toLowerCase()] ?? null;
+  if (mb) return mailboxRole(mb, advertised);
+  const byName = NAME_TO_ROLE[name.toLowerCase()] ?? null;
+  return byName && advertised.has(byName) ? null : byName;
 }
 
 /**
@@ -106,10 +117,6 @@ export function mailboxRoleByName(name: string, mailboxes: any[] = []): MailboxR
  * a well-known name. Returns `fallback` when no matching mailbox is found, so a
  * caller can still attempt a move/copy against the conventional name.
  */
-export function findMailboxNameByRoleOld(role: MailboxRole, mailboxes: any[], fallback: string): string {
-  const mb = (mailboxes || []).find(m => mailboxRole(m) === role);
-  return mb ? (mb.Name || mb.Mailbox || fallback) : fallback;
-}
 
 export function mailboxAccountFromName(name: string): string | null {
 
@@ -126,36 +133,86 @@ export function mailboxAccountFromName(name: string): string | null {
 
 export function findMailboxNameByRole(role: MailboxRole, name: string, mailboxes: any[], fallback: string): string {
 
+  const advertised = advertisedRoles(mailboxes);
   if (!name) {
     return fallback;
   }
   const account = mailboxAccountFromName(name);
   if (account === null) {
     const related = (mailboxes || []).filter(m => mailboxAccountFromName(m.Name || m.Mailbox || "") === null);
-    const mb = related.find(m => mailboxRole(m) === role);
+    const mb = related.find(m => mailboxRole(m, advertised) === role);
     return mb ? (mb.Name || mb.Mailbox || fallback) : fallback;
   } else {
     const related = (mailboxes || []).filter(m => mailboxAccountFromName(m.Name || m.Mailbox || "") === account);
-    const mb = related.find(m => mailboxRole(m) === role);
+    const mb = related.find(m => mailboxRole(m, advertised) === role);
     fallback = account + "#" + fallback;
     return mb ? (mb.Name || mb.Mailbox || fallback) : fallback;
   }
 }
 
-export function folderCanBeDeleted(name: string): boolean {
+/**
+ * The roles this server assigns itself, by special-use attribute (RFC 6154).
+ *
+ * Per ROLE, not per server: a server that advertises \Sent and \Trash but no
+ * \Junk still gets "Spam" recognised by name, while no folder can be Trash by
+ * name once one carries \Trash. \Inbox is left out — INBOX is reserved by name
+ * in IMAP itself, and a server marking it says nothing about the other roles.
+ */
+export function advertisedRoles(mailboxes: any[] = []): Set<MailboxRole> {
+  const roles = new Set<MailboxRole>();
+  for (const mb of mailboxes || []) {
+    const attrs: any[] = Array.isArray(mb?.Attrs) ? mb.Attrs : [];
+    for (const a of attrs) {
+      const role = typeof a === 'string' ? ATTR_TO_ROLE[a.toLowerCase()] : undefined;
+      if (role && role !== 'inbox') roles.add(role);
+    }
+  }
+  return roles;
+}
 
-  if (/^(trash|junk|spam|deleted items)$/i.test(name)) {
-    return true;
-  }
-  let parts = name.split("#");
-  if (parts.length == 1) {
-    return false;
-  }
-  if (!parts[0].startsWith("@")) {
-    return false;
-  }
-  if (/^(trash|junk|spam|deleted items)$/i.test(parts[1])) {
-    return true;
-  }
-  return false
+/**
+ * Is `name` a folder nested under `parent`?
+ *
+ * A bare `name.startsWith(parent)` is what the folder verbs used, and it is
+ * wrong in the direction that costs the user their place: deleting `Arch` also
+ * matched `Archive`, so the view navigated away from a folder that still
+ * exists, and renaming `Work` dragged `Workshop` with it.
+ *
+ * The next character after the prefix has to be a SEPARATOR, and the separator
+ * is per-mailbox in IMAP — `.` on Dovecot, `/` on some servers, `[Gmail]/…` on
+ * Gmail — so rather than hardcode one, anything that is not alphanumeric counts.
+ * That is deliberately loose: it admits every delimiter a server might report
+ * while still refusing the `Archive`/`Arch` case this exists for.
+ *
+ * Pass `delimiter` when the caller knows it, and the test is exact.
+ */
+export function isDescendantMailbox(name: string, parent: string, delimiter?: string): boolean {
+  if (!name || !parent || name === parent) return false;
+  if (!name.startsWith(parent)) return false;
+  const rest = name.slice(parent.length);
+  if (delimiter) return rest.startsWith(delimiter);
+  return /^[^A-Za-z0-9]/.test(rest);
+}
+
+/**
+ * `name` is `parent` itself, or nested under it — the question the folder verbs
+ * are actually asking when they decide whether the view has to move.
+ */
+export function isSelfOrDescendantMailbox(name: string, parent: string, delimiter?: string): boolean {
+  return name === parent || isDescendantMailbox(name, parent, delimiter);
+}
+
+/**
+ * The hierarchy delimiter the SERVER reported for this mailbox, or `''`.
+ *
+ * IMAP hands the delimiter back per mailbox on LIST, and it is not the same
+ * everywhere — `.` on Dovecot, `/` on several others, and Gmail's `[Gmail]/…`.
+ * `folder-list` has always read it (`mb.Delimiter || mb.Delim`) to build the
+ * tree; this puts the same lookup where non-tree callers can reach it, so the
+ * sidebar and the header can stop disagreeing about where a name is split.
+ */
+export function mailboxDelimiter(name: string, mailboxes: any[] = []): string {
+  if (!name) return '';
+  const mb = mailboxes.find(m => (m.Name || m.Mailbox) === name);
+  return mb?.Delimiter || mb?.Delim || '';
 }

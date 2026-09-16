@@ -7,6 +7,7 @@ export const en = {
     later: 'Later',
   },
   settings: {
+    saveFailed: 'Could not save that setting — it may not survive signing out',
     title: 'Settings',
     categories: {
       general: 'General',
@@ -71,7 +72,8 @@ export const en = {
       sortUid: 'Folder Filing Date',
       sortDate: 'Received Date',
       enableThreading: 'Use threading',
-      themeIframeContent: 'Apply theme to HTML messages content'
+      themeIframeContent: 'Apply theme to HTML messages content',
+      threadingNotSupported: "Not supported by your mail server"
     },
     appearance: {
       colorTheme: 'Color Theme',
@@ -91,7 +93,9 @@ export const en = {
       loose: 'Loose',
       normal: 'Normal',
       compact: 'Compact',
-      ultraCompact: 'Ultra Compact'
+      ultraCompact: 'Ultra Compact',
+      showSenderAvatars: 'Show sender avatars',
+      showSenderAvatarsDesc: 'Pictures and initials beside senders in the message list and reader. Whether a sender is verified is shown either way.'
     },
     localization: {
       language: 'Language',
@@ -106,7 +110,8 @@ export const en = {
       serbian: 'Српски',
       serbianLatin: 'Srpski (Latinica)',
       french: 'Français',
-      portuguese: 'Português'
+      portuguese: 'Português',
+      danish: 'Dansk'
     }
   },
   linkedAccounts: {
@@ -154,7 +159,8 @@ export const en = {
       keys_title: 'Security Keys',
       noKeys: 'No registered keys.',
       added: 'Added',
-      remove_btn: 'Remove'
+      remove_btn: 'Remove',
+      unnamed_key: "Security Key"
     }
   },
   print: {
@@ -172,8 +178,10 @@ export const en = {
     pleaseWait: 'Please wait',
     wait: 'Wait',
     signedOut: 'You have been signed out.',
+    signedOutDraftsLost: 'You have been signed out. Some unsent drafts could not be saved and were lost.',
     sessionExpired: 'Your session has expired. Please sign in again.',
-    inactivitySignedOut: "You've been signed out due to inactivity."
+    inactivitySignedOut: "You've been signed out due to inactivity.",
+    inactivitySignedOutDraftsLost: "You've been signed out due to inactivity. Some unsent drafts could not be saved and were lost."
   },
   folderList: {
     compose: 'Compose',
@@ -189,6 +197,7 @@ export const en = {
     delete: 'Delete',
     createFolder: 'Create Folder',
     renameFolder: 'Rename Folder',
+    folderName: 'Folder name',
     deleteFolder: 'Delete Folder',
     deleteFolderConfirm: 'Are you sure you want to delete "{folder}"? All messages inside will be permanently deleted.',
     expandSidebar: 'Expand sidebar',
@@ -196,9 +205,20 @@ export const en = {
     moveToTrash: 'Move to Trash',
     moveToTrashConfirm: 'Are you sure you want to move "{folder}" to the Trash?',
     createSubfolder: 'Create subfolder',
-    createSubfolderUnder: 'Create Subfolder under "{folder}"'
+    createSubfolderUnder: 'Create Subfolder under "{folder}"',
+    subscribe: "Subscribe",
+    unsubscribe: "Unsubscribe",
+    order: "Order",
+    moveToTop: "Move to Top",
+    moveUp: "Move Up",
+    moveDown: "Move Down",
+    moveToBottom: "Move to Bottom"
+  },
+  search: {
+    placeholder: 'Search mail',
   },
   messageList: {
+    menu: 'Menu',
     selectAll: 'Select all messages',
     checkNew: 'Check for new messages',
     sortDesc: 'Sort descending by date',
@@ -206,6 +226,8 @@ export const en = {
     filterStarred: 'Filter by starred',
     filterUnread: 'Filter by unread',
     noMessages: 'No messages',
+    loadError: 'Could not load this folder.',
+    loadErrorRetry: 'Try again',
     loading: 'Loading...',
     unknownSender: 'Unknown Sender',
     unknown: 'Unknown',
@@ -225,10 +247,14 @@ export const en = {
     emptyMailboxFailed: 'Failed to empty mailbox. Make sure it is Trash or Junk.'
   },
   composer: {
+    discardFailed: 'The draft could not be deleted from the server and is still in Drafts.',
+    attachmentsTooLarge: 'Attachments exceed the maximum allowed size.',
+    draftSaveFailedKeepOpen: 'Could not save this draft — the window stays open so nothing is lost',
     attachmentsWait: 'Please wait for attachments to finish uploading before sending.',
     sending: 'Message is being sent...',
     undo: 'Undo',
-    sendError: 'Failed to send message: {error}'
+    sendError: 'Failed to send message: {error}',
+    presendFailed: 'A security plugin could not process this message, so it was not sent.'
   },
   messageComposer: {
     fontSize: 'Font Size',
@@ -292,6 +318,7 @@ export const en = {
     unknownError: 'Unknown error'
   },
   messageReader: {
+    moreOptions: 'More options',
     tags: 'Tags',
     removeAllTags: 'Remove all tags',
     removeTag: 'Remove tag',
@@ -333,6 +360,7 @@ export const en = {
     showOriginal: 'Show original',
     verifiedSender: 'Verified Sender',
     unverifiedSender: 'Unverified Sender',
+    senderUnverifiedWarning: 'Your mail server could not verify this sender. The message may not be from who it claims to be, so be careful with its links and attachments.',
     clickToExpand: 'Click to expand message content'
   },
   originalMessage: {
@@ -365,13 +393,29 @@ export const en = {
     actionCopy: 'Copy to'
   },
   attachment: {
-    remove: 'Remove'
+    remove: 'Remove',
+    preview: 'Preview',
+    download: 'Download',
+    zoomIn: 'Zoom in',
+    zoomOut: 'Zoom out',
+    rotate: 'Rotate',
+    fitToScreen: 'Fit to screen',
+    previous: 'Previous',
+    next: 'Next',
+    copyContent: 'Copy content',
+    copied: 'Copied!',
+    openInNewTab: 'Open in new tab',
+    cannotPreview: 'No preview available for this file type',
+    loadingPreview: 'Loading preview...',
+    errorLoading: 'Failed to load preview',
+    close: 'Close'
   },
 
   navigation: {
     messages: 'Messages',
     contacts: 'Contacts',
-    calendar: 'Calendar'
+    calendar: 'Calendar',
+    tasks: 'Tasks'
   },
   userMenu: {
     settings: 'Settings',
@@ -387,30 +431,71 @@ export const en = {
     messagePermanentlyDeleted: 'Message permanently deleted',
     draftDiscarded: 'Draft discarded',
     folderRenamed: 'Folder renamed',
+    tagNotSupported: 'That tag is not supported by this mail server',
+    flagChangeFailed: 'Could not update the messages',
+    folderCreated: 'Folder created',
+    folderExists: 'A folder with that name already exists',
+    folderCreateFailed: 'Could not create the folder',
+    folderRenameFailed: 'Could not rename the folder',
+    folderDeleteFailed: 'Could not delete the folder',
+    folderUndoFailed: 'Could not undo that',
     folderMovedToTrash: 'Folder moved to Trash',
     folderPermanentlyDeleted: 'Folder permanently deleted',
     undo: 'Undo',
     dismiss: 'Dismiss',
     messageMovedToArchive: 'Message moved to Archive',
-    messagesMovedToArchive: '{count} messages moved to Archive',
+    messagesMovedToArchive: {
+      one: "{count} message moved to Archive",
+      other: "{count} messages moved to Archive"
+    },
     messageMovedToSpam: 'Message moved to Spam',
-    messagesMovedToSpam: '{count} messages moved to Spam',
+    messagesMovedToSpam: {
+      one: "{count} message moved to Spam",
+      other: "{count} messages moved to Spam"
+    },
     messageMovedToInbox: 'Message moved to Inbox',
-    messagesMovedToInbox: '{count} messages moved to Inbox',
+    messagesMovedToInbox: {
+      one: "{count} message moved to Inbox",
+      other: "{count} messages moved to Inbox"
+    },
     messageMovedToTrash: 'Message moved to Trash',
-    messagesMovedToTrash: '{count} messages moved to Trash',
+    messagesMovedToTrash: {
+      one: "{count} message moved to Trash",
+      other: "{count} messages moved to Trash"
+    },
     messageMovedToFolder: 'Message moved to {folder}',
-    messagesMovedToFolder: '{count} messages moved to {folder}',
+    messagesMovedToFolder: {
+      one: "{count} message moved to {folder}",
+      other: "{count} messages moved to {folder}"
+    },
     messageCopiedToFolder: 'Message copied to {folder}',
-    messagesCopiedToFolder: '{count} messages copied to {folder}',
-    draftsDiscarded: '{count} drafts discarded',
-    messagesPermanentlyDeleted: '{count} messages permanently deleted'
+    messagesCopiedToFolder: {
+      one: "{count} message copied to {folder}",
+      other: "{count} messages copied to {folder}"
+    },
+    draftsDiscarded: {
+      one: "{count} draft discarded",
+      other: "{count} drafts discarded"
+    },
+    messagesPermanentlyDeleted: {
+      one: "{count} message permanently deleted",
+      other: "{count} messages permanently deleted"
+    },
+    undoFailed: 'Could not undo that',
+    messageDeleteFailed: 'The message could not be deleted',
+    moveFailed: 'Could not move that',
+    copyFailed: 'Could not copy that',
+    subscribeFailed: "Could not subscribe",
+    unsubscribeFailed: "Could not unsubscribe"
   },
   mailboxPage: {
     mailboxNotFound: 'Mailbox not found',
     newMessages: 'New Messages',
     newMessagesSingleBody: 'You have 1 new message',
-    newMessagesMultiBody: 'You have {count} new messages',
+    newMessagesMultiBody: {
+      one: "You have {count} new message",
+      other: "You have {count} new messages"
+    },
     newMessagesInInbox: 'New messages in Inbox',
     newMessagesAvailable: 'New messages available',
     open: 'Open',
@@ -424,12 +509,24 @@ export const en = {
     description: 'Network connectivity lost',
     tryingAgain: 'Trying again in {seconds} seconds...'
   },
+  update: {
+    available: 'A new version is available.',
+    reload: 'Reload'
+  },
   general: {
     error: 'Error',
     cancel: 'Cancel',
     save: 'Save',
     optional: 'Optional',
-    delete: 'Delete'
+    delete: 'Delete',
+    clear: "Clear",
+    showPassword: "Show password",
+    hidePassword: "Hide password",
+    previous: "Previous",
+    next: "Next",
+    expand: "Expand",
+    collapse: "Collapse",
+    notFound: "Page not found"
   }
 };
 

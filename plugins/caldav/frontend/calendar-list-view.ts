@@ -3,6 +3,7 @@ import { customElement, property } from 'lit/decorators.js';
 import { consume } from '@lit/context';
 import { i18nContext, I18nStore } from '../../../frontend/src/store/i18n-store';
 import type { EventData } from './calendar-service';
+import { isAllDayEvent } from './calendar-service';
 import './calendar-event-preview';
 
 @customElement('calendar-list-view')
@@ -44,6 +45,13 @@ export class CalendarListView extends LitElement {
             transition: background-color 0.15s;
             align-items: flex-start;
             gap: 16px;
+        }
+
+        /* An invitation the user declined stays in view, so it can be taken
+           back, but reads as not happening. */
+        .event-item.declined .event-title {
+            opacity: 0.55;
+            text-decoration: line-through;
         }
 
         .event-item:hover {
@@ -128,12 +136,18 @@ export class CalendarListView extends LitElement {
         return html`
             <div class="list-container">
                 ${sortedEvents.map(event => {
-                    const startDate = new Date(event.start);
-                    const isAllDay = event.start.length === 10 || event.end.length === 10;
+                    // The server's own flag. The length-10 test never matched: every
+                    // event arrives as a full RFC 3339 instant, so an all-day event
+                    // was listed as timed, at midnight UTC in local time, under the
+                    // previous day's date anywhere west of UTC.
+                    const isAllDay = isAllDayEvent(event);
+                    const startDate = isAllDay
+                        ? new Date(event.start.split('T')[0] + 'T00:00:00')
+                        : new Date(event.start);
                     
                     return html`
                         <alps-popup align="left" position="bottom" style="width: 100%; display: block;" @click=${(ev: Event) => ev.stopPropagation()}>
-                            <div slot="trigger" class="event-item">
+                            <div slot="trigger" class="event-item ${event.status === 'declined' ? 'declined' : ''}">
                                 <div class="event-date">
                                     <span class="date-day">${startDate.getDate()}</span>
                                     <span class="date-month">${this.i18nStore?.t(`calendar.monthsShort.${startDate.getMonth()}`)} ${startDate.getFullYear()}</span>

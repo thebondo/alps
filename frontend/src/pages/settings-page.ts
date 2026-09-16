@@ -509,7 +509,7 @@ export class SettingsPage extends LitElement {
             ${this.i18nStore?.t('settings.reading.enableThreading')}
             ${this.settingsState.hasThreadCapability === false ? html`
               <span style="font-size: 12px; color: var(--text-muted); font-weight: normal; margin-left: 4px;">
-                (Not supported by your mail server)
+                (${this.i18nStore?.t('settings.reading.threadingNotSupported')})
               </span>
             ` : ''}
           </label>
@@ -612,6 +612,15 @@ export class SettingsPage extends LitElement {
           ]}>
           </alps-select>
         </alps-setting-group>
+
+        <alps-setting-group description="${this.i18nStore?.t('settings.appearance.showSenderAvatarsDesc')}">
+          <label class="checkbox-label">
+            <input type="checkbox"
+                   ?checked=${this.settingsState.showSenderAvatars}
+                   @change=${(e: Event) => this.handleUpdate(e, 'showSenderAvatars')}>
+            ${this.i18nStore?.t('settings.appearance.showSenderAvatars')}
+          </label>
+        </alps-setting-group>
     `;
   }
 
@@ -627,7 +636,8 @@ export class SettingsPage extends LitElement {
             {value: "rs", label: this.i18nStore?.t('settings.localization.serbian') || "rs"},
             {value: "sr", label: this.i18nStore?.t('settings.localization.serbianLatin') || "sr"},
             {value: "fr", label: this.i18nStore?.t('settings.localization.french') || "fr"},
-            {value: "pt", label: this.i18nStore?.t('settings.localization.portuguese') || "pt"}
+            {value: "pt", label: this.i18nStore?.t('settings.localization.portuguese') || "pt"},
+            {value: "da", label: this.i18nStore?.t('settings.localization.danish') || "da"}
           ]}>
           </alps-select>
         </alps-setting-group>

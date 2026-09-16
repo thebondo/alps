@@ -1,5 +1,5 @@
 import { fetchWithTimeout } from '../utils/fetch-utils';
-import { FOLDER_NONE, mailboxRole, encodeMailboxPath } from '../utils/folders';
+import { FOLDER_NONE, mailboxRole, encodeMailboxPath, isDescendantMailbox } from '../utils/folders';
 import { Logger } from '../utils/logger';
 
 export interface MailboxData {
@@ -61,6 +61,40 @@ export class MessageSyncService extends EventTarget {
   }
 
   /**
+   * The folder on screen has been renamed.
+   *
+   * Called BEFORE the sync that follows a rename, because the sync re-reads
+   * whatever mailbox this service is pointed at — and if that is the folder
+   * just renamed, the name it holds is the one the IMAP server has stopped
+   * answering for. The poll then 404s and the view reports the folder missing,
+   * a moment before the UI navigates to the new name anyway.
+   */
+  mailboxRenamed(oldName: string, newName: string) {
+    if (this.currentMailbox === oldName) {
+      this.currentMailbox = newName;
+    } else if (this.currentMailbox.startsWith(oldName)) {
+      // A child of the renamed folder moves with its parent. Guarded by the
+      // delimiter so renaming `Arch` does not claim `Archive`.
+      const rest = this.currentMailbox.slice(oldName.length);
+      if (/^[^A-Za-z0-9]/.test(rest)) {
+        this.currentMailbox = newName + rest;
+      }
+    }
+  }
+
+  /**
+   * The folder on screen has been deleted. Same ordering rule as
+   * {@link mailboxRenamed}: point the poll somewhere that still exists before
+   * it runs, rather than letting it ask for a mailbox that is gone.
+   */
+  mailboxDeleted(name: string) {
+    if (this.currentMailbox === name || isDescendantMailbox(this.currentMailbox, name)) {
+      this.currentMailbox = FOLDER_NONE;
+      this.currentPage = 0;
+    }
+  }
+
+  /**
    * Forces an immediate sync using the current context.
    */
   sync() {
@@ -97,7 +131,6 @@ export class MessageSyncService extends EventTarget {
       if (this.currentFetchId !== fetchId) return; // Prevent race conditions
 
       if (response.status === 401) {
-        this.dispatchEvent(new CustomEvent('auth-error'));
         window.dispatchEvent(new CustomEvent('auth-error'));
         return;
       }
@@ -136,29 +169,54 @@ export class MessageSyncService extends EventTarget {
    * Background sync invoked by the interval.
    */
   private async backgroundSync() {
+    // The poll takes a ticket from the same counter the foreground fetch uses.
+    //
+    // It did not, and nothing else made the two agree, so a background response
+    // that landed after the user had clicked into another folder dispatched
+    // `sync-success` with the PREVIOUS folder's messages — the list snapping
+    // back to what you just navigated away from, once every polling interval.
+    const fetchId = ++this.currentFetchId;
+    const mailbox = this.currentMailbox;
+    const page = this.currentPage;
+    const query = this.currentQuery;
     try {
       for (const name of this.watchList) {
         if (name !== this.currentMailbox) {
           await fetchWithTimeout(`/mailboxes/${encodeMailboxPath(name)}/status`).catch(() => {});
+          if (this.currentFetchId !== fetchId) return;
         }
       }
       if (this.currentMailbox !== FOLDER_NONE) {
         await fetchWithTimeout(`/mailboxes/${encodeMailboxPath(this.currentMailbox)}/status`);
+        if (this.currentFetchId !== fetchId) return;
       }
 
-      let url = `/mailboxes/${encodeMailboxPath(this.currentMailbox)}?page=${this.currentPage}`;
-      if (this.currentQuery) url += `&query=${encodeURIComponent(this.currentQuery)}`;
+      let url = `/mailboxes/${encodeMailboxPath(mailbox)}?page=${page}`;
+      if (query) url += `&query=${encodeURIComponent(query)}`;
 
       const response = await fetchWithTimeout(url);
+      if (this.currentFetchId !== fetchId) return;
+
       if (response.status === 401) {
-        this.dispatchEvent(new CustomEvent('auth-error'));
         window.dispatchEvent(new CustomEvent('auth-error'));
         return;
       }
+
+      // The foreground path reports this; the poll used to fall through to
+      // `response.json()` on the 404 body and die in the catch, so a folder
+      // renamed or deleted in another tab left this one polling a mailbox that
+      // no longer exists, silently, until the user clicked something.
+      if (response.status === 404) {
+        this.dispatchEvent(new CustomEvent('mailbox-not-found'));
+        return;
+      }
+
       const data: MailboxData = await response.json();
+      if (this.currentFetchId !== fetchId) return;
       this.updateWatchList(data);
       this.dispatchEvent(new CustomEvent('sync-success', { detail: { data, background: true } }));
     } catch (err) {
+      if (this.currentFetchId !== fetchId) return;
       Logger.error('Background sync failed', err);
     }
   }

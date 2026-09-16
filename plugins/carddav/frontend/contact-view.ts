@@ -215,7 +215,12 @@ export class AlpsContactView extends LitElement {
 
   updated(changedProperties: Map<string, any>) {
     if (changedProperties.has('contact') || changedProperties.has('isEditing')) {
-      if (this.contact && this.isEditing && (!this.editForm || this.editForm.path !== this.contact.path)) {
+      // From the card each time editing STARTS, as well as on a different card:
+      // editing the same card again kept the previous form, so after a refused
+      // save and a cancel the form came back holding the refused values rather
+      // than the version just read.
+      const startedEditing = changedProperties.has('isEditing') && this.isEditing;
+      if (this.contact && this.isEditing && (startedEditing || !this.editForm || this.editForm.path !== this.contact.path)) {
         this.editForm = { ...this.contact };
         this.isDirty = false;
         if (Array.isArray(this.editForm.categories)) {
@@ -276,7 +281,8 @@ export class AlpsContactView extends LitElement {
   }
 
   private get isStarred() {
-    if (this.selectedCount > 1) {
+    // The banner's threshold: from the first tick the toolbar is about the ticked contacts.
+    if (this.selectedCount > 0) {
       return this.allSelectedStarred;
     }
     return this.contact?.categories?.includes(CATEGORY_FAVORITES) || false;

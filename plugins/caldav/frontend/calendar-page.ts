@@ -3,7 +3,8 @@ import { customElement, state } from 'lit/decorators.js';
 import { consume } from '@lit/context';
 import { i18nContext, I18nStore } from '../../../frontend/src/store/i18n-store';
 import { settingsContext, SettingsStore } from '../../../frontend/src/store/settings-store';
-import { calendarService, getCalendarColor } from './calendar-service';
+import { calendarService, taskTellsSomeone, tellsSomeone, getCalendarColor, holdsEvents, taskChips, weekStart } from './calendar-service';
+import { tasksService, type TaskData } from './tasks-service';
 import type { CalendarData, EventData } from './calendar-service';
 import { sidebarLayoutStyles } from '../../../frontend/src/components/alps-sidebar';
 import '../../../frontend/src/components/alps-sidebar';
@@ -12,6 +13,7 @@ import '../../../frontend/src/components/alps-button';
 import '../../../frontend/src/components/alps-toolbar';
 import '../../../frontend/src/components/alps-create-button';
 import './calendar-event-modal';
+import './task-modal';
 import { RRule } from 'rrule';
 
 // Import our modular view components
@@ -25,6 +27,7 @@ import './alps-sidebar-calendar';
 import '../../../frontend/src/components/alps-nav-buttons';
 import '../../../frontend/src/components/ui-prompt';
 import '../../../frontend/src/components/ui-confirm';
+import { isVersionConflict } from '../../../frontend/src/utils/fetch-utils';
 import '../../../frontend/src/components/alps-popup';
 import { renderIcon } from '../../../frontend/src/utils/ui';
 import { popupStyles } from '../../../frontend/src/components/alps-popup';
@@ -36,6 +39,25 @@ const SIDEBAR_WIDTH_MIN = 150;
 const SIDEBAR_WIDTH_MAX = 500;
 
 const SIDEBAR_COLLAPSE_THRESHOLD = 120;
+
+const SHOW_TASKS_KEY = 'alps.calendar.showTasks';
+
+/** Whether tasks are drawn on the calendar: on unless switched off here. */
+function readShowTasks(): boolean {
+    try {
+        return localStorage.getItem(SHOW_TASKS_KEY) !== 'false';
+    } catch {
+        return true;
+    }
+}
+
+function writeShowTasks(show: boolean) {
+    try {
+        localStorage.setItem(SHOW_TASKS_KEY, String(show));
+    } catch {
+        // Storage refused (a private window): the choice lasts this visit.
+    }
+}
 
 @customElement('calendar-page')
 export class CalendarPage extends LitElement {
@@ -51,12 +73,15 @@ export class CalendarPage extends LitElement {
     @state() viewMode: ViewMode = 'month';
     @state() loading = true;
     @state() isSpinning = false;
-    @state() error = '';
 
     @state() modalOpen = false;
     @state() selectedEvent?: EventData;
     @state() initialDate?: Date;
+    @state() initialAllDay?: boolean;
     @state() private activeCalendars: Set<string> = new Set();
+    @state() private showTasks = readShowTasks();
+    @state() private taskModalOpen = false;
+    @state() private editingTask?: TaskData;
     @state() searchQuery = '';
 
     @state() private sidebarWidth = 250;
@@ -72,6 +97,8 @@ export class CalendarPage extends LitElement {
     @state() private promptTarget: any = null;
     @state() private calendarToDelete: any = null;
     @state() private eventToDelete: any = null;
+    /** Who tells guests about changes, as the calendar listing says: the server, or alps by email. */
+    @state() private scheduling: 'server' | 'email' = 'email';
     @state() private activeKebabMenu: string | null = null;
     private hoverTimeout: any = null;
     @state() private suppressSidebarHover = false;
@@ -380,6 +407,15 @@ export class CalendarPage extends LitElement {
         }
     }
 
+    /** Says a write failed. Deleting a calendar, deleting an event and saving a
+     * calendar all reported failure to the console only, so the UI went on
+     * showing the state the user had asked for. */
+    private reportFailure(key: string) {
+        window.dispatchEvent(new CustomEvent('show-toast', {
+            detail: { message: this.i18nStore?.t(key), duration: 5000 }
+        }));
+    }
+
     private parseHash() {
         const hash = window.location.hash;
         if (!hash.startsWith('#/calendar')) return false;
@@ -409,16 +445,19 @@ export class CalendarPage extends LitElement {
             } else if (this.viewMode === 'month') {
                 const [y, m] = dateStr.split('-');
                 if (y && m) {
-                    newDate.setFullYear(parseInt(y, 10));
-                    newDate.setMonth(parseInt(m, 10) - 1);
-                    newDate.setDate(1);
+                    // Constructed, not set field by field. setMonth on the 29th–31st
+                    // rolls into the following month when the target month is
+                    // shorter — January 31 becomes "April 31", which is May 1 —
+                    // before setDate(1) runs, so a link to April opened May on the
+                    // last days of a long month.
+                    newDate = new Date(parseInt(y, 10), parseInt(m, 10) - 1, 1);
                 }
             } else {
                 const [y, m, d] = dateStr.split('-');
                 if (y && m && d) {
-                    newDate.setFullYear(parseInt(y, 10));
-                    newDate.setMonth(parseInt(m, 10) - 1);
-                    newDate.setDate(parseInt(d, 10));
+                    // As above: set field by field from the 31st, February 15
+                    // became March 15.
+                    newDate = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10));
                 }
             }
             
@@ -503,9 +542,19 @@ export class CalendarPage extends LitElement {
     private async fetchData() {
         this.loading = true;
         this.isSpinning = true;
-        this.error = '';
+        // Alongside the events, and apart from them: tasks that fail to load
+        // leave the calendar's own events on screen, and say so separately.
+        // Not during a search, whose results are events.
+        const tasksLoad = this.showTasks && !this.searchQuery
+            ? tasksService.fetchTasks('active').catch(err => {
+                console.error('Failed to load tasks for the calendar', err);
+                this.reportFailure('tasks.loadFailed');
+                return null;
+            })
+            : Promise.resolve(null);
         try {
             const calRes = await calendarService.fetchCalendars();
+            this.scheduling = calRes.scheduling === 'server' ? 'server' : 'email';
             
             let start, end;
             const year = this.currentDate.getFullYear();
@@ -513,15 +562,16 @@ export class CalendarPage extends LitElement {
 
             if (this.viewMode === 'year') {
                 start = new Date(year, 0, 1);
-                end = new Date(year, 11, 31);
+                // The start of the day AFTER the last one drawn, as the week arm
+                // does. Ending at 31 December 00:00 dropped that day's timed events.
+                end = new Date(year + 1, 0, 1);
             } else if (this.viewMode === 'month') {
                 start = new Date(year, month, 1);
                 end = new Date(year, month + 1, 0);
                 start.setDate(start.getDate() - 14);
                 end.setDate(end.getDate() + 14);
             } else if (this.viewMode === 'week') {
-                start = new Date(this.currentDate);
-                start.setDate(start.getDate() - start.getDay() + 1); // Monday
+                start = weekStart(this.currentDate);
                 end = new Date(start);
                 end.setDate(start.getDate() + 7);
             } else {
@@ -564,12 +614,13 @@ export class CalendarPage extends LitElement {
                 }
             }
 
-            this.events = expandedEvents.map(ev => ({
+            const tasks = (await tasksLoad)?.tasks ?? [];
+            this.events = [...expandedEvents, ...taskChips(tasks)].map(ev => ({
                 ...ev,
                 color: ev.color || getCalendarColor(ev.calendarPath || ev.path)
             }));
 
-            this.calendars = calRes.calendars.map((c: any) => ({
+            this.calendars = calRes.calendars.filter(holdsEvents).map((c: any) => ({
                 ...c,
                 color: c.color || getCalendarColor(c.path)
             }));
@@ -579,7 +630,9 @@ export class CalendarPage extends LitElement {
             }
         } catch (e) {
             console.error(e);
-            this.error = 'Failed to load calendar data.';
+            // Said, not stored: `error` was written here and rendered nowhere, so a
+            // calendar that failed to load simply showed no events.
+            this.reportFailure('calendar.loadFailed');
         } finally {
             this.loading = false;
         }
@@ -592,12 +645,16 @@ export class CalendarPage extends LitElement {
     };
 
     private changeDate(offset: number, forceMode?: string) {
-        const d = new Date(this.currentDate);
+        let d = new Date(this.currentDate);
         const mode = (forceMode || this.viewMode) as ViewMode;
-        if (mode === 'year') {
-            d.setFullYear(d.getFullYear() + offset);
-        } else if (mode === 'month') {
-            d.setMonth(d.getMonth() + offset);
+        if (mode === 'year' || mode === 'month') {
+            // Constructed, with the day clamped to the target month. setMonth and
+            // setFullYear keep the day of the month, and a day the target month
+            // does not have rolls into the month after it: "next" from 31 January
+            // opened March, and "previous" from 31 March stayed in March.
+            const months = mode === 'year' ? offset * 12 : offset;
+            const lastDay = new Date(d.getFullYear(), d.getMonth() + months + 1, 0).getDate();
+            d = new Date(d.getFullYear(), d.getMonth() + months, Math.min(d.getDate(), lastDay));
         } else if (mode === 'week') {
             d.setDate(d.getDate() + (offset * 7));
         } else {
@@ -606,15 +663,22 @@ export class CalendarPage extends LitElement {
         this.navigate(mode, d);
     }
 
-    private openCreateModal(date?: Date) {
+    private openCreateModal(date?: Date, allDay?: boolean) {
         this.selectedEvent = undefined;
         this.initialDate = date;
+        this.initialAllDay = allDay;
         this.modalOpen = true;
     }
 
     private openEditModal(event: EventData) {
+        if (event.task) {
+            this.editingTask = event.task;
+            this.taskModalOpen = true;
+            return;
+        }
         this.selectedEvent = event;
         this.initialDate = undefined;
+        this.initialAllDay = undefined;
         this.modalOpen = true;
     }
 
@@ -622,17 +686,65 @@ export class CalendarPage extends LitElement {
         this.modalOpen = false;
         this.selectedEvent = undefined;
         this.initialDate = undefined;
+        this.initialAllDay = undefined;
     }
 
     private async handleModalSaved() {
         this.modalOpen = false;
         this.selectedEvent = undefined;
         this.initialDate = undefined;
+        this.initialAllDay = undefined;
         await this.fetchData();
     }
 
+    /** Does the period currently on screen include `date`? */
+    private viewShows(date: Date): boolean {
+        const anchor = this.currentDate;
+        if (this.viewMode === 'year') return date.getFullYear() === anchor.getFullYear();
+        if (this.viewMode === 'month') {
+            return date.getFullYear() === anchor.getFullYear() && date.getMonth() === anchor.getMonth();
+        }
+        if (this.viewMode === 'week') {
+            const start = weekStart(anchor);
+            const end = new Date(start);
+            end.setDate(start.getDate() + 7);
+            return date >= start && date < end;
+        }
+        return date.toDateString() === anchor.toDateString();
+    }
+
+    /**
+     * The day a view switch lands on.
+     *
+     * In month and year view `currentDate` is not a day the user chose: those
+     * hashes carry no day-of-month, so parseHash anchors it to the 1st. Handing
+     * that anchor straight to Day view opened the 1st of the month while the user
+     * was looking at the CURRENT month — on first visit too, since #/calendar
+     * redirects to this month. Today wins whenever the period being left contains
+     * it; otherwise the anchor stands, so switching to Day from a month the user
+     * navigated to keeps that month instead of jumping back to now.
+     */
+    private dayForViewSwitch(mode: ViewMode): Date {
+        if (mode === 'day' || mode === 'week') {
+            const today = new Date();
+            if (this.viewShows(today)) return today;
+        }
+        return this.currentDate;
+    }
+
+    /**
+     * The Today button: today's own day, in Day view.
+     *
+     * Today in the view already on screen only moved a month or a year to the
+     * period holding today, where today is one cell among many and still has
+     * to be found; the button is asked for a day.
+     */
+    private goToToday() {
+        this.navigate('day', new Date());
+    }
+
     private setViewMode(mode: ViewMode) {
-        this.navigate(mode, this.currentDate);
+        this.navigate(mode, this.dayForViewSwitch(mode));
     }
 
     private handleDateSelected(date: Date) {
@@ -665,25 +777,85 @@ export class CalendarPage extends LitElement {
             await calendarService.deleteCalendar(calendar.path);
             this.calendars = this.calendars.filter(c => c.path !== calendar.path);
             if (this.activeCalendars.has(calendar.path)) {
-                this.activeCalendars.delete(calendar.path);
+                // A new Set: this is @state, and Lit compares by identity, so a
+                // delete in place is invisible to anything bound to it.
+                const next = new Set(this.activeCalendars);
+                next.delete(calendar.path);
+                this.activeCalendars = next;
                 await this.fetchData();
             }
         } catch (err) {
             console.error('Failed to delete calendar', err);
+            this.reportFailure('calendar.deleteCalendarFailed');
         }
     }
 
-    private async _executeDeleteEvent() {
+    private async _executeDeleteEvent(notify = true) {
         if (!this.eventToDelete) return;
         const event = this.eventToDelete;
         this.eventToDelete = null;
 
         try {
-            await calendarService.deleteEvent(event.path);
+            if (event.task) {
+                const removed = await tasksService.deleteTask(event.task.path, { notify, lang: this.i18nStore?.getLanguage?.() });
+                if (removed?.sendFailed) this.reportFailure('invitations.notTold');
+            } else {
+                const removed = await calendarService.deleteEvent(event.path, { notify, lang: this.i18nStore?.getLanguage?.() });
+                if (removed?.sendFailed) this.reportFailure('invitations.notTold');
+            }
             await this.fetchData();
         } catch (err) {
             console.error('Failed to delete event', err);
+            this.reportFailure(event.task ? 'tasks.deleteFailed' : 'calendar.deleteEventFailed');
         }
+    }
+
+    /**
+     * Whether an event, or a task's chip, is drawn.
+     *
+     * A task in a calendar listed here follows that calendar's box as its events
+     * do. A task in a list that holds only tasks has no box here, and follows
+     * the Tasks switch alone.
+     */
+    private isShown(event: EventData): boolean {
+        if (!event.task) return this.activeCalendars.has(event.calendarPath);
+        return this.showTasks && (!this.calendars.some(c => c.path === event.calendarPath) || this.activeCalendars.has(event.calendarPath));
+    }
+
+    private toggleTasks() {
+        this.showTasks = !this.showTasks;
+        writeShowTasks(this.showTasks);
+        void this.fetchData();
+    }
+
+    /** Answers an invitation from its event in the calendar. */
+    private async respondToEvent(event: EventData, status: string) {
+        try {
+            const saved = await calendarService.respondToEvent(event, status, this.i18nStore?.getLanguage?.());
+            if (saved.sendFailed) this.reportFailure('invitations.sendFailed');
+            await this.fetchData();
+        } catch (err) {
+            console.error('Failed to answer the invitation', err);
+            const conflict = isVersionConflict(err);
+            this.reportFailure(conflict ? 'invitations.changedElsewhere' : 'invitations.answerFailed');
+            if (conflict) await this.fetchData();
+        }
+    }
+
+    private async completeTask(task: TaskData) {
+        try {
+            const saved = await tasksService.completeTask(task.path, true, this.i18nStore?.getLanguage?.());
+            if (saved?.sendFailed) this.reportFailure('invitations.notTold');
+            await this.fetchData();
+        } catch (err) {
+            console.error('Failed to update task', err);
+            this.reportFailure('tasks.completeFailed');
+        }
+    }
+
+    private closeTaskModal() {
+        this.taskModalOpen = false;
+        this.editingTask = undefined;
     }
 
     private toggleCalendar(path: string) {
@@ -709,6 +881,7 @@ export class CalendarPage extends LitElement {
             await this.fetchData();
         } catch (err) {
             console.error('Failed to save calendar', err);
+            this.reportFailure('calendar.saveCalendarFailed');
         }
     }
 
@@ -734,7 +907,7 @@ export class CalendarPage extends LitElement {
             title = monthName;
         }
 
-        const visibleEvents = this.events.filter(e => this.activeCalendars.has(e.calendarPath));
+        const visibleEvents = this.events.filter(e => this.isShown(e));
 
         return html`
             <app-header 
@@ -831,6 +1004,12 @@ export class CalendarPage extends LitElement {
                                             </div>
                                         </div>
                                     `)}
+                                    <div class="calendar-item tasks-toggle" @click=${this.toggleTasks}>
+                                        <div class="calendar-checkbox ${this.showTasks ? 'checked' : ''}" style="--cal-color: var(--text-secondary, #4b5563)">
+                                            ${this.showTasks ? renderIcon('check') : ''}
+                                        </div>
+                                        <span>${this.i18nStore?.t('tasks.title')}</span>
+                                    </div>
                                 </div>
 
                                 <alps-sidebar-calendar
@@ -874,13 +1053,13 @@ export class CalendarPage extends LitElement {
                             <alps-nav-buttons 
                                 label="${this.i18nStore?.t('calendar.today')}"
                                 @previous=${() => this.changeDate(-1)}
-                                @center=${() => { this.navigate(this.viewMode, new Date()); }}
+                                @center=${() => this.goToToday()}
                                 @next=${() => this.changeDate(1)}
                             ></alps-nav-buttons>
                         </div>
                     </div>
 
-                    <div class="calendar-body">
+                    <div class="calendar-body" @complete-task=${(e: CustomEvent) => void this.completeTask(e.detail.task)} @respond-event=${(e: CustomEvent) => void this.respondToEvent(e.detail.event, e.detail.status)}>
                         ${this.searchQuery ? html`
                             <calendar-list-view
                                 .events=${visibleEvents}
@@ -899,7 +1078,7 @@ export class CalendarPage extends LitElement {
                             <calendar-month-view 
                                 .date=${this.currentDate} 
                                 .events=${visibleEvents}
-                                @create-event=${(e: CustomEvent) => this.openCreateModal(e.detail.date)}
+                                @create-event=${(e: CustomEvent) => this.openCreateModal(e.detail.date, e.detail.allDay)}
                                 @edit-event=${(e: CustomEvent) => this.openEditModal(e.detail.event)}
                                 @delete-event=${(e: CustomEvent) => this.eventToDelete = e.detail.event}
                             ></calendar-month-view>
@@ -908,7 +1087,7 @@ export class CalendarPage extends LitElement {
                             <calendar-week-view 
                                 .date=${this.currentDate} 
                                 .events=${visibleEvents}
-                                @create-event=${(e: CustomEvent) => this.openCreateModal(e.detail.date)}
+                                @create-event=${(e: CustomEvent) => this.openCreateModal(e.detail.date, e.detail.allDay)}
                                 @edit-event=${(e: CustomEvent) => this.openEditModal(e.detail.event)}
                                 @delete-event=${(e: CustomEvent) => this.eventToDelete = e.detail.event}
                             ></calendar-week-view>
@@ -917,7 +1096,7 @@ export class CalendarPage extends LitElement {
                                 <calendar-day-view 
                                     .date=${this.currentDate} 
                                     .events=${visibleEvents}
-                                    @create-event=${(e: CustomEvent) => this.openCreateModal(e.detail.date)}
+                                    @create-event=${(e: CustomEvent) => this.openCreateModal(e.detail.date, e.detail.allDay)}
                                     @edit-event=${(e: CustomEvent) => this.openEditModal(e.detail.event)}
                                     @delete-event=${(e: CustomEvent) => this.eventToDelete = e.detail.event}
                                 ></calendar-day-view>
@@ -944,13 +1123,28 @@ export class CalendarPage extends LitElement {
                 </div>
             </div>
 
+            <task-modal
+                .open=${this.taskModalOpen}
+                .task=${this.editingTask}
+                .scheduling=${this.scheduling}
+                @close=${this.closeTaskModal}
+                @saved=${() => { this.closeTaskModal(); void this.fetchData(); }}
+                @conflict=${this.fetchData}
+                @delete=${(e: CustomEvent) => {
+                    this.closeTaskModal();
+                    this.eventToDelete = { ...e.detail.task, task: e.detail.task };
+                }}
+            ></task-modal>
+
             <calendar-event-modal
                 .open=${this.modalOpen}
                 .event=${this.selectedEvent}
                 .initialDate=${this.initialDate}
+                .initialAllDay=${this.initialAllDay}
                 .calendars=${this.calendars}
                 @close=${this.handleModalClose}
                 @saved=${this.handleModalSaved}
+                @conflict=${this.fetchData}
             ></calendar-event-modal>
 
             ${this.promptOpen ? html`
@@ -973,13 +1167,27 @@ export class CalendarPage extends LitElement {
                 ></ui-confirm>
             ` : ''}
 
-            ${this.eventToDelete ? html`
+            ${this.eventToDelete && (this.eventToDelete.task ? taskTellsSomeone(this.eventToDelete.task, this.scheduling) : tellsSomeone(this.eventToDelete, this.scheduling)) ? html`
+                <ui-confirm
+                    class="delete-meeting"
+                    title="${this.i18nStore?.t(this.eventToDelete.task ? 'tasks.deleteTask' : 'calendar.deleteEvent')}"
+                    message="${this.i18nStore?.t(this.eventToDelete.task
+                        ? (this.eventToDelete.task.role === 'organizer' ? 'tasks.deleteTellAssignees' : 'tasks.deleteTellAssigner')
+                        : (this.eventToDelete.role === 'organizer' ? 'invitations.deleteTellGuests' : 'invitations.deleteTellOrganizer'))}"
+                    confirmText="${this.i18nStore?.t('invitations.deleteAndTell')}"
+                    secondaryText="${this.i18nStore?.t('invitations.deleteOnly')}"
+                    isDanger
+                    @confirm=${() => this._executeDeleteEvent(true)}
+                    @secondary=${() => this._executeDeleteEvent(false)}
+                    @cancel=${() => this.eventToDelete = null}
+                ></ui-confirm>
+            ` : this.eventToDelete ? html`
                 <ui-confirm
                     title="${this.i18nStore?.t('calendar.deleteEvent')}"
                     message="Are you sure you want to delete this event?"
                     confirmText="${this.i18nStore?.t('calendar.delete')}"
                     isDanger
-                    @confirm=${this._executeDeleteEvent}
+                    @confirm=${() => this._executeDeleteEvent()}
                     @cancel=${() => this.eventToDelete = null}
                 ></ui-confirm>
             ` : ''}
